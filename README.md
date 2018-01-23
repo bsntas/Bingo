@@ -2,24 +2,24 @@
 
 This is a multi-player Bingo game developed using Java, that can run on a LAN.
 
-# To run this game
+## To run this game
 
-        1. cd into Bingo-Binary folder
+1. cd into Bingo-Binary folder
 
-        2. Give executable permission to bingo.sh file
+2. Give executable permission to bingo.sh file
         $ chmod +x bingo.sh
 
-        3. Run the shell script file
+3. Run the shell script file
         $ ./bingo.sh
 
-        4. Enter your name in the text box
+4. Enter your name in the text box
 
-        5. First and only first player, choose the first option "Host the game myself", press "continue" (the screen changes to show all joined players' list). Do not press "Start Game" button until all participants join.
-                Subsequent players, choose the second option "Connect to remote host" (activated by default) and type in the first player's (who runs the game server) ip address and press "continue".
+5. First and only first player, choose the first option "Host the game myself", press "continue" (the screen changes to show all joined players' list). Do not press "Start Game" button until all participants join.
+Subsequent players, choose the second option "Connect to remote host" (activated by default) and type in the first player's (who runs the game server) ip address and press "continue".
 
-        6. When all the players have joined, the first player (who is running the game server) press "Start Game". The screen changes to show the game for all players. Only one player is activated at a given point in time (marked by green signal before the palyer's name).
+6. When all the players have joined, the first player (who is running the game server) press "Start Game". The screen changes to show the game for all players. Only one player is activated at a given point in time (marked by green signal before the palyer's name).
 
-        7. Enjoy the BINGO game.
+7. Enjoy the BINGO game.
 
 
 #Dependencies:
