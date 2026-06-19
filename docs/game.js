@@ -533,6 +533,25 @@
   nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
   roomInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
 
+  // ── Reconnection guard ────────────────────────────────────────
+  // When the mobile browser backgrounds the tab, Firebase drops the
+  // connection and onDisconnect fires (removing the player). If the
+  // page isn't reloaded, tryRestore() never runs. This listener
+  // re-registers the player every time Firebase comes back online.
+  db.ref('.info/connected').on('value', async snap => {
+    if (!snap.val() || !myRoomCode || !myName) return;
+    const playerKey = safeKey(myName);
+    const playerSnap = await db.ref(`rooms/${myRoomCode}/players/${playerKey}`).once('value');
+    if (!playerSnap.exists()) {
+      await db.ref(`rooms/${myRoomCode}/players/${playerKey}`).set({
+        name: myName, isHost: myIsHost, score: 0,
+        kit: myKit ? JSON.stringify(myKit) : ''
+      });
+    }
+    // Re-register onDisconnect for this new connection
+    db.ref(`rooms/${myRoomCode}/players/${playerKey}`).onDisconnect().remove();
+  });
+
   // ── Auto-restore session on page load ─────────────────────────
   tryRestore();
 
