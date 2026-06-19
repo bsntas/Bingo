@@ -208,10 +208,12 @@
       font-size: 0.875rem;
       color: var(--text-dim);
       text-align: center;
-      min-height: 2.5rem;
+      height: 3rem;
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
       transition: border-color 0.2s, color 0.2s;
     }
     #instruction.my-turn { border-color: var(--accent); color: var(--accent); }
@@ -264,6 +266,10 @@
       text-align: center;
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* During gameplay, pin content to top so the board never jumps when
+       instruction text or player list height changes between turns */
+    body.in-game { justify-content: flex-start; }
 
     @media (max-width: 580px) {
       #game-layout { flex-direction: column; }
