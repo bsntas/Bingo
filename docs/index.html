@@ -39,7 +39,6 @@
 
     .screen { display: none; width: 100%; max-width: 460px; flex-direction: column; align-items: center; gap: 1.5rem; }
     .screen.active { display: flex; }
-    #game-screen { max-width: 740px; }
 
     .title {
       font-size: 3rem;
@@ -163,13 +162,10 @@
     }
     .bingo-letter.scored { color: var(--accent); text-shadow: 0 0 12px rgba(74,222,128,0.5); }
 
-    #game-layout { display: flex; gap: 1.5rem; width: 100%; align-items: flex-start; }
-
     #bingo-board {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: 6px;
-      flex: 1;
       width: 100%;
       pointer-events: none;
     }
@@ -194,18 +190,9 @@
     #bingo-board.active .cell:not(.marked):hover { background: var(--surface2); border-color: var(--accent); }
     .cell.marked { background: var(--marked); border-color: var(--accent-dim); color: var(--marked-text); cursor: default; }
 
-    #turn-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 1rem;
-      padding: 1rem;
-      min-width: 150px;
-      max-width: 190px;
-    }
-    #turn-panel h3 { text-align: center; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 0.75rem; }
+    #game-players-section { width: 100%; }
 
     #instruction {
-      margin-top: 0.75rem;
       padding: 0.6rem 1rem;
       background: var(--surface);
       border: 1px solid var(--border);
@@ -283,13 +270,7 @@
     }
     #exit-btn:hover { border-color: var(--red); color: var(--red); }
 
-    /* During gameplay, pin content to top so the board never jumps when
-       instruction text or player list height changes between turns */
-    body.in-game { justify-content: flex-start; }
-
     @media (max-width: 580px) {
-      #game-layout { flex-direction: column; align-items: stretch; }
-      #turn-panel { max-width: 100%; min-width: unset; }
       .bingo-letter { font-size: 2rem; width: 2.4rem; }
       .cell { font-size: 1rem; }
     }
@@ -351,16 +332,12 @@
     <span class="bingo-letter" id="bl-3">G</span>
     <span class="bingo-letter" id="bl-4">O</span>
   </div>
-  <div id="game-layout">
-    <div style="flex:1; width:100%; min-width:0">
-      <div id="bingo-board"></div>
-      <div id="instruction">Waiting…</div>
-    </div>
-    <div id="turn-panel">
-      <h3>Players</h3>
-      <ul class="player-list" id="game-player-list"></ul>
-    </div>
+  <div id="game-players-section">
+    <div class="section-label" style="text-align:center;margin-bottom:0.5rem">Players</div>
+    <ul class="player-list" id="game-player-list"></ul>
   </div>
+  <div id="bingo-board"></div>
+  <div id="instruction">Waiting…</div>
   <button id="exit-btn">Leave game</button>
 </div>
 
