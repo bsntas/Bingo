@@ -170,6 +170,7 @@
       grid-template-columns: repeat(5, 1fr);
       gap: 6px;
       flex: 1;
+      pointer-events: none;
     }
     .cell {
       aspect-ratio: 1;
@@ -181,12 +182,15 @@
       justify-content: center;
       font-size: 1.2rem;
       font-weight: 700;
-      cursor: pointer;
       user-select: none;
+      cursor: default;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
       transition: background 0.15s, border-color 0.15s;
     }
+    #bingo-board.active { pointer-events: auto; }
+    #bingo-board.active .cell:not(.marked) { cursor: pointer; }
     #bingo-board.active .cell:not(.marked):hover { background: var(--surface2); border-color: var(--accent); }
-    #bingo-board:not(.active) .cell:not(.marked) { cursor: default; }
     .cell.marked { background: var(--marked); border-color: var(--accent-dim); color: var(--marked-text); cursor: default; }
 
     #turn-panel {
