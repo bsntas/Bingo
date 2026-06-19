@@ -180,10 +180,9 @@
       font-weight: 700;
       cursor: pointer;
       user-select: none;
-      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      transition: background 0.15s, border-color 0.15s;
     }
-    #bingo-board.active .cell:not(.marked):hover { background: var(--surface2); border-color: var(--accent); transform: scale(1.06); }
-    #bingo-board.active .cell:not(.marked):active { transform: scale(0.95); }
+    #bingo-board.active .cell:not(.marked):hover { background: var(--surface2); border-color: var(--accent); }
     #bingo-board:not(.active) .cell:not(.marked) { cursor: default; }
     .cell.marked { background: var(--marked); border-color: var(--accent-dim); color: var(--marked-text); cursor: default; }
 
