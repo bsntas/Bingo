@@ -79,7 +79,6 @@
   function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[name].classList.add('active');
-    document.body.classList.toggle('in-game', name === 'game');
   }
 
   function showToast(msg) {
