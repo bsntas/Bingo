@@ -94,6 +94,67 @@
     continueBtn.disabled = false;
   }
 
+  // ── Session persistence (survive mobile tab kills) ────────────
+
+  function saveSession() {
+    if (!myRoomCode || !myName || !myKit) return;
+    try {
+      localStorage.setItem('bingo_session', JSON.stringify({
+        name: myName, roomCode: myRoomCode, isHost: myIsHost,
+        kit: myKit, ts: Date.now()
+      }));
+    } catch (e) {}
+  }
+
+  function clearSession() {
+    try { localStorage.removeItem('bingo_session'); } catch (e) {}
+  }
+
+  async function tryRestore() {
+    let saved;
+    try {
+      const raw = localStorage.getItem('bingo_session');
+      if (!raw) return false;
+      saved = JSON.parse(raw);
+    } catch (e) { return false; }
+
+    if (!saved || Date.now() - saved.ts > 4 * 60 * 60 * 1000) {
+      clearSession(); return false;
+    }
+
+    const { name, roomCode, isHost, kit } = saved;
+    let snap;
+    try { snap = await db.ref(`rooms/${roomCode}`).once('value'); }
+    catch (e) { return false; }
+
+    if (!snap.exists()) { clearSession(); return false; }
+
+    const room = snap.val();
+    if (room.winner) { clearSession(); return false; }
+
+    myName = name; myRoomCode = roomCode; myIsHost = isHost; myKit = kit;
+
+    const playerKey = safeKey(name);
+    if (!room.players?.[playerKey]) {
+      await db.ref(`rooms/${roomCode}/players/${playerKey}`).set({
+        name, isHost, score: 0,
+        kit: room.started && kit ? JSON.stringify(kit) : ''
+      });
+    }
+    db.ref(`rooms/${roomCode}/players/${playerKey}`).onDisconnect().remove();
+
+    if (isHost) {
+      roomCodeBox.style.display = '';
+      roomCodeTxt.textContent = roomCode;
+      startBtn.style.display = '';
+      startBtn.disabled = !!room.started;
+    }
+
+    attachRoomListener(roomCode);
+    if (!room.started) showScreen('lobby');
+    return true;
+  }
+
   // ── Role toggle ───────────────────────────────────────────────
 
   function syncRoleUI() {
@@ -256,6 +317,7 @@
 
         const me = activePlayers[safeKey(myName)];
         myKit = me?.kit ? JSON.parse(me.kit) : null;
+        saveSession();
 
         buildBoard();
         renderGamePlayers();
@@ -390,6 +452,7 @@
   }
 
   function showGameOver(winner) {
+    clearSession();
     if (winner === myName) {
       winnerText.textContent = 'You Win! 🎉';
       winnerText.style.color = 'var(--accent)';
@@ -421,6 +484,7 @@
   // ── Reset ──────────────────────────────────────────────────────
 
   function reset() {
+    clearSession();
     if (roomRef) { roomRef.off(); roomRef = null; }
 
     // Clean up Firebase so stale rooms don't affect future games
@@ -469,5 +533,8 @@
 
   nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
   roomInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
+
+  // ── Auto-restore session on page load ─────────────────────────
+  tryRestore();
 
 })();
