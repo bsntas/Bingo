@@ -132,8 +132,8 @@
       players: { [safeKey(name)]: { name, isHost: true, score: 0, kit: '' } }
     });
 
-    // Auto-remove this player's record if they disconnect
-    db.ref(`rooms/${code}/players/${safeKey(name)}`).onDisconnect().remove();
+    // Host disconnecting removes the whole room so others aren't left stranded
+    db.ref(`rooms/${code}`).onDisconnect().remove();
 
     attachRoomListener(code);
     roomCodeBox.style.display = '';
@@ -288,15 +288,12 @@
           }
         }
 
-        // Turn update
-        if (room.turn !== currentTurn) {
-          currentTurn = room.turn;
-          renderGamePlayers();
-          updateInstruction();
-          setBoardEnabled(currentTurn === myName);
-        }
-
+        // Always sync turn state on every snapshot — handles reconnects
+        // and window/tab switches where Firebase re-fires the listener
+        currentTurn = room.turn || currentTurn;
         renderGamePlayers();
+        updateInstruction();
+        setBoardEnabled(currentTurn === myName);
       }
 
       // Update start button state for host
@@ -407,6 +404,16 @@
 
   function reset() {
     if (roomRef) { roomRef.off(); roomRef = null; }
+
+    // Clean up Firebase so stale rooms don't affect future games
+    if (myRoomCode && myName) {
+      if (myIsHost) {
+        db.ref(`rooms/${myRoomCode}`).remove();  // host leaving = end the room
+      } else {
+        db.ref(`rooms/${myRoomCode}/players/${safeKey(myName)}`).remove();
+      }
+    }
+
     myName = ''; myRoomCode = ''; myIsHost = false;
     myKit = null; seenNums = new Set(); myScore = 0;
     playerOrder = []; activePlayers = {}; currentTurn = '';
