@@ -397,7 +397,25 @@
       winnerText.textContent = `Winner: ${winner}`;
       winnerText.style.color = 'var(--blue)';
     }
+    buildGameoverBoard();
     showScreen('gameover');
+  }
+
+  function buildGameoverBoard() {
+    const wrap = document.getElementById('gameover-board-wrap');
+    const boardEl = document.getElementById('gameover-board');
+    boardEl.innerHTML = '';
+    if (!myKit) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        const num = myKit[r][c];
+        const cell = document.createElement('div');
+        cell.className = 'preview-cell' + (seenNums.has(num) ? ' marked' : '');
+        cell.textContent = num;
+        boardEl.appendChild(cell);
+      }
+    }
   }
 
   // ── Reset ──────────────────────────────────────────────────────
@@ -425,6 +443,7 @@
     lobbyList.innerHTML = '';
     gameList.innerHTML = '';
     board.innerHTML = '';
+    document.getElementById('gameover-board').innerHTML = '';
     updateScore(0);
     showScreen('start');
   }
