@@ -80,6 +80,7 @@
   function showScreen(name) {
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[name].classList.add('active');
+    document.body.classList.toggle('in-game', name === 'game');
   }
 
   function showToast(msg) {
@@ -429,7 +430,7 @@
 
   function updateInstruction() {
     if (currentTurn === myName) {
-      instruction.textContent = 'Your turn — click a number to call it!';
+      instruction.textContent = 'Your turn — tap a number!';
       instruction.classList.add('my-turn');
     } else {
       instruction.textContent = `${currentTurn}'s turn…`;
