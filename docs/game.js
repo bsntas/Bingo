@@ -132,8 +132,8 @@
       players: { [safeKey(name)]: { name, isHost: true, score: 0, kit: '' } }
     });
 
-    // Auto-remove this player's record if they disconnect
-    db.ref(`rooms/${code}/players/${safeKey(name)}`).onDisconnect().remove();
+    // Host disconnecting removes the whole room so others aren't left stranded
+    db.ref(`rooms/${code}`).onDisconnect().remove();
 
     attachRoomListener(code);
     roomCodeBox.style.display = '';
@@ -288,15 +288,12 @@
           }
         }
 
-        // Turn update
-        if (room.turn !== currentTurn) {
-          currentTurn = room.turn;
-          renderGamePlayers();
-          updateInstruction();
-          setBoardEnabled(currentTurn === myName);
-        }
-
+        // Always sync turn state on every snapshot — handles reconnects
+        // and window/tab switches where Firebase re-fires the listener
+        currentTurn = room.turn || currentTurn;
         renderGamePlayers();
+        updateInstruction();
+        setBoardEnabled(currentTurn === myName);
       }
 
       // Update start button state for host
@@ -341,7 +338,7 @@
       for (let c = 0; c < 5; c++) {
         const num = myKit[r][c];
         const cell = document.createElement('div');
-        cell.className = 'cell off';
+        cell.className = 'cell';
         cell.textContent = num;
         cell.dataset.num = num;
         cell.addEventListener('click', () => callNumber(num));
@@ -352,17 +349,13 @@
   }
 
   function setBoardEnabled(enabled) {
-    board.querySelectorAll('.cell').forEach(c => {
-      if (c.classList.contains('marked')) return;
-      c.classList.toggle('off', !enabled);
-    });
+    board.classList.toggle('active', enabled);
   }
 
   function markCell(num) {
     board.querySelectorAll('.cell').forEach(c => {
       if (parseInt(c.dataset.num, 10) === num) {
         c.classList.add('marked');
-        c.classList.remove('off');
       }
     });
   }
@@ -411,6 +404,16 @@
 
   function reset() {
     if (roomRef) { roomRef.off(); roomRef = null; }
+
+    // Clean up Firebase so stale rooms don't affect future games
+    if (myRoomCode && myName) {
+      if (myIsHost) {
+        db.ref(`rooms/${myRoomCode}`).remove();  // host leaving = end the room
+      } else {
+        db.ref(`rooms/${myRoomCode}/players/${safeKey(myName)}`).remove();
+      }
+    }
+
     myName = ''; myRoomCode = ''; myIsHost = false;
     myKit = null; seenNums = new Set(); myScore = 0;
     playerOrder = []; activePlayers = {}; currentTurn = '';
