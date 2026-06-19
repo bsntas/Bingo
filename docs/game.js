@@ -341,7 +341,7 @@
       for (let c = 0; c < 5; c++) {
         const num = myKit[r][c];
         const cell = document.createElement('div');
-        cell.className = 'cell off';
+        cell.className = 'cell';
         cell.textContent = num;
         cell.dataset.num = num;
         cell.addEventListener('click', () => callNumber(num));
@@ -352,17 +352,13 @@
   }
 
   function setBoardEnabled(enabled) {
-    board.querySelectorAll('.cell').forEach(c => {
-      if (c.classList.contains('marked')) return;
-      c.classList.toggle('off', !enabled);
-    });
+    board.classList.toggle('active', enabled);
   }
 
   function markCell(num) {
     board.querySelectorAll('.cell').forEach(c => {
       if (parseInt(c.dataset.num, 10) === num) {
         c.classList.add('marked');
-        c.classList.remove('off');
       }
     });
   }
