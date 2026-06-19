@@ -65,10 +65,11 @@
     return kit;
   }
 
-  // Count completed rows only. Win when all 5 rows are done.
+  // Count completed rows + columns. Win at 5.
   function calcScore(kit, marked) {
     let s = 0;
     for (let r = 0; r < 5; r++) if (kit[r].every(n => marked.has(n))) s++;
+    for (let c = 0; c < 5; c++) if (kit.every(row => marked.has(row[c]))) s++;
     return s;
   }
 
