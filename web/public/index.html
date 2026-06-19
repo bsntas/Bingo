@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bingo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1b2a;
+      --surface: #1b2d45;
+      --surface2: #243b55;
+      --accent: #4ade80;
+      --accent-dim: #166534;
+      --blue: #60a5fa;
+      --red: #f87171;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --border: #2d4a6e;
+      --marked: #14532d;
+      --marked-text: #4ade80;
+      --turn: #4ade80;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Screens ─────────────────────────────────────────────── */
+    .screen { display: none; width: 100%; max-width: 480px; padding: 1.5rem; }
+    .screen.active { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+
+    #game-screen { max-width: 760px; }
+
+    /* ── Title ───────────────────────────────────────────────── */
+    .title {
+      font-size: 3rem;
+      font-weight: 900;
+      letter-spacing: 0.25em;
+      color: var(--accent);
+      text-shadow: 0 0 20px rgba(74, 222, 128, 0.4);
+    }
+
+    /* ── Card (panel) ────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 2rem;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* ── Form elements ───────────────────────────────────────── */
+    input[type="text"] {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder { color: var(--text-dim); }
+    input[type="text"].uppercase { text-transform: uppercase; letter-spacing: 0.1em; }
+
+    /* ── Role selector ───────────────────────────────────────── */
+    .role-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    .role-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      font-size: 0.95rem;
+    }
+    .role-label input { display: none; }
+    .role-label.selected {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    button {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-primary { background: var(--accent); color: #052e16; width: 100%; }
+    .btn-primary:not(:disabled):hover { opacity: 0.88; }
+    .btn-secondary { background: var(--surface2); color: var(--text); width: 100%; }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* ── Error / status text ──────────────────────────────────── */
+    .error { color: var(--red); font-size: 0.875rem; min-height: 1.25rem; text-align: center; }
+    .status-text { color: var(--text-dim); font-size: 0.875rem; text-align: center; }
+
+    /* ── Room code display ───────────────────────────────────── */
+    .room-code-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem 1.5rem;
+      text-align: center;
+    }
+    .room-code-box .label { font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+    .room-code-box .code {
+      font-size: 2.5rem;
+      font-weight: 900;
+      letter-spacing: 0.3em;
+      color: var(--blue);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Player list ─────────────────────────────────────────── */
+    .player-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    .player-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.6rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      font-size: 0.95rem;
+    }
+    .player-list li .badge {
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.25rem;
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .player-list li .turn-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .player-list li.active-turn .turn-dot { background: var(--turn); box-shadow: 0 0 6px var(--turn); }
+    .player-list li.active-turn { border-color: var(--turn); }
+
+    /* ── BINGO score display ──────────────────────────────────── */
+    #bingo-score {
+      display: flex;
+      gap: 0.25rem;
+      justify-content: center;
+    }
+    .bingo-letter {
+      font-size: 2.8rem;
+      font-weight: 900;
+      width: 3rem;
+      text-align: center;
+      color: var(--red);
+      text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+      transition: color 0.3s, text-shadow 0.3s;
+    }
+    .bingo-letter.scored {
+      color: var(--accent);
+      text-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+    }
+
+    /* ── Game layout ─────────────────────────────────────────── */
+    #game-layout {
+      display: flex;
+      gap: 1.5rem;
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    /* ── Bingo board ─────────────────────────────────────────── */
+    #bingo-board {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      flex: 1;
+    }
+
+    .cell {
+      aspect-ratio: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
+      color: var(--text);
+      user-select: none;
+    }
+    .cell:not(.marked):not(.disabled):hover {
+      background: var(--surface2);
+      border-color: var(--accent);
+      transform: scale(1.05);
+    }
+    .cell:not(.marked):not(.disabled):active { transform: scale(0.95); }
+    .cell.marked {
+      background: var(--marked);
+      border-color: var(--accent-dim);
+      color: var(--marked-text);
+      cursor: default;
+    }
+    .cell.marked::after {
+      content: '';
+      position: absolute;
+    }
+    .cell.disabled { opacity: 0.5; cursor: not-allowed; }
+    .cell.disabled:not(.marked):hover { transform: none; background: var(--surface); border-color: var(--border); }
+
+    /* ── Turn panel ──────────────────────────────────────────── */
+    #turn-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1rem;
+      min-width: 160px;
+      max-width: 200px;
+    }
+    #turn-panel h3 {
+      text-align: center;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+    }
+
+    /* ── Instruction bar ─────────────────────────────────────── */
+    #instruction {
+      margin-top: 0.75rem;
+      padding: 0.6rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+      text-align: center;
+      min-height: 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #instruction.your-turn { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Game Over screen ────────────────────────────────────── */
+    #gameover-screen .gameover-title {
+      font-size: 3.5rem;
+      font-weight: 900;
+      color: var(--red);
+      text-shadow: 0 0 20px rgba(248, 113, 113, 0.4);
+    }
+    #winner-text {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--blue);
+      text-align: center;
+    }
+
+    /* ── Alert toast ─────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(2rem);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      opacity: 0;
+      transition: opacity 0.25s, transform 0.25s;
+      pointer-events: none;
+      z-index: 999;
+      max-width: 90vw;
+      text-align: center;
+    }
+    #toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Lobby section headings ──────────────────────────────── */
+    .section-label {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.25rem;
+    }
+
+    @media (max-width: 600px) {
+      #game-layout { flex-direction: column; }
+      #turn-panel { max-width: 100%; min-width: unset; }
+      .bingo-letter { font-size: 2rem; width: 2.4rem; }
+      .cell { font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Start Screen ───────────────────────────────────────── -->
+  <div id="start-screen" class="screen active">
+    <div class="title">BINGO</div>
+    <div class="card">
+      <div>
+        <div class="section-label">Your Name</div>
+        <input type="text" id="name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
+      </div>
+      <div>
+        <div class="section-label">Role</div>
+        <div class="role-group">
+          <label class="role-label selected" id="role-host-label">
+            <input type="radio" name="role" value="host" checked id="role-host">
+            Host a game
+          </label>
+          <label class="role-label" id="role-join-label">
+            <input type="radio" name="role" value="join" id="role-join">
+            Join a game
+          </label>
+        </div>
+      </div>
+      <div id="room-input-group" style="display:none">
+        <div class="section-label">Room Code</div>
+        <input type="text" id="room-input" placeholder="Enter 4-letter code" maxlength="4" autocomplete="off" class="uppercase">
+      </div>
+      <button class="btn-primary" id="continue-btn">Continue</button>
+      <p class="error" id="start-error"></p>
+    </div>
+  </div>
+
+  <!-- ── Lobby Screen ───────────────────────────────────────── -->
+  <div id="lobby-screen" class="screen">
+    <div class="title">BINGO</div>
+    <div class="card">
+      <div class="room-code-box" id="room-code-box" style="display:none">
+        <div class="label">Room Code — share with friends</div>
+        <div class="code" id="room-code-display"></div>
+      </div>
+      <div>
+        <div class="section-label">Players (<span id="player-count">0</span>/5)</div>
+        <ul class="player-list" id="lobby-player-list"></ul>
+      </div>
+      <button class="btn-primary" id="start-btn" disabled>Start Game</button>
+      <p class="status-text" id="lobby-status">Waiting for more players…</p>
+    </div>
+  </div>
+
+  <!-- ── Game Screen ────────────────────────────────────────── -->
+  <div id="game-screen" class="screen">
+    <div id="bingo-score">
+      <span class="bingo-letter" id="bl-0">B</span>
+      <span class="bingo-letter" id="bl-1">I</span>
+      <span class="bingo-letter" id="bl-2">N</span>
+      <span class="bingo-letter" id="bl-3">G</span>
+      <span class="bingo-letter" id="bl-4">O</span>
+    </div>
+    <div id="game-layout">
+      <div style="flex:1">
+        <div id="bingo-board"></div>
+        <div id="instruction">Waiting…</div>
+      </div>
+      <div id="turn-panel">
+        <h3>Players</h3>
+        <ul class="player-list" id="game-player-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Game Over Screen ───────────────────────────────────── -->
+  <div id="gameover-screen" class="screen">
+    <div class="gameover-title">Game Over</div>
+    <div id="winner-text"></div>
+    <button class="btn-primary" id="play-again-btn" style="max-width:240px">Play Again</button>
+  </div>
+
+  <!-- ── Toast ──────────────────────────────────────────────── -->
+  <div id="toast"></div>
+
+  <script src="game.js"></script>
+</body>
+</html>
