@@ -132,8 +132,8 @@
       players: { [safeKey(name)]: { name, isHost: true, score: 0, kit: '' } }
     });
 
-    // Host disconnecting removes the whole room so others aren't left stranded
-    db.ref(`rooms/${code}`).onDisconnect().remove();
+    // Remove host's player record on disconnect (full room cleanup is handled by reset())
+    db.ref(`rooms/${code}/players/${safeKey(name)}`).onDisconnect().remove();
 
     attachRoomListener(code);
     roomCodeBox.style.display = '';
