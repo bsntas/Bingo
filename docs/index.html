@@ -170,6 +170,7 @@
       grid-template-columns: repeat(5, 1fr);
       gap: 6px;
       flex: 1;
+      width: 100%;
       pointer-events: none;
     }
     .cell {
@@ -271,12 +272,23 @@
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+    #exit-btn {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      font-size: 0.82rem;
+      padding: 0.5rem 1.25rem;
+      width: auto;
+      align-self: center;
+    }
+    #exit-btn:hover { border-color: var(--red); color: var(--red); }
+
     /* During gameplay, pin content to top so the board never jumps when
        instruction text or player list height changes between turns */
     body.in-game { justify-content: flex-start; }
 
     @media (max-width: 580px) {
-      #game-layout { flex-direction: column; }
+      #game-layout { flex-direction: column; align-items: stretch; }
       #turn-panel { max-width: 100%; min-width: unset; }
       .bingo-letter { font-size: 2rem; width: 2.4rem; }
       .cell { font-size: 1rem; }
@@ -340,7 +352,7 @@
     <span class="bingo-letter" id="bl-4">O</span>
   </div>
   <div id="game-layout">
-    <div style="flex:1">
+    <div style="flex:1; width:100%; min-width:0">
       <div id="bingo-board"></div>
       <div id="instruction">Waiting…</div>
     </div>
@@ -349,6 +361,7 @@
       <ul class="player-list" id="game-player-list"></ul>
     </div>
   </div>
+  <button id="exit-btn">Leave game</button>
 </div>
 
 <!-- ── Game Over ──────────────────────────────────────────── -->

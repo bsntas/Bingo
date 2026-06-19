@@ -40,6 +40,7 @@
   const gameList    = $('game-player-list');
   const winnerText  = $('winner-text');
   const playAgainBtn = $('play-again-btn');
+  const exitBtn     = $('exit-btn');
   const toastEl     = $('toast');
 
   // ── Utilities ─────────────────────────────────────────────────
@@ -490,6 +491,74 @@
 
   // ── Reset ──────────────────────────────────────────────────────
 
+  // ── Leave game (mid-game exit) ────────────────────────────────
+
+  async function exitGame() {
+    if (!myRoomCode || !myName) return;
+
+    const code = myRoomCode;
+    const name = myName;
+    const playerKey = safeKey(name);
+
+    // Detach listener before touching Firebase so we don't react to our own removal
+    if (roomRef) { roomRef.off(); roomRef = null; }
+    clearSession();
+
+    // Reset local state and go to start immediately
+    myName = ''; myRoomCode = ''; myIsHost = false;
+    myKit = null; seenNums = new Set(); myScore = 0;
+    playerOrder = []; activePlayers = {}; currentTurn = '';
+    gameStarted = false; gameOver = false;
+    startError.textContent = '';
+    continueBtn.disabled = false;
+    startBtn.style.display = 'none';
+    roomCodeBox.style.display = 'none';
+    board.innerHTML = '';
+    gameList.innerHTML = '';
+    lobbyList.innerHTML = '';
+    document.getElementById('gameover-board').innerHTML = '';
+    updateScore(0);
+    showScreen('start');
+
+    // Update Firebase: remove player, advance turn if needed, check last-player win
+    const snap = await db.ref(`rooms/${code}`).once('value');
+    if (!snap.exists()) return;
+
+    const room = snap.val();
+    const allOrder = (room.playerOrder || '').split(',').filter(Boolean);
+    const remainingOrder = allOrder.filter(n => n !== name);
+    const remainingActive = remainingOrder.filter(n => room.players?.[safeKey(n)]);
+
+    if (remainingActive.length === 0) {
+      db.ref(`rooms/${code}`).remove();
+      return;
+    }
+
+    const updates = {
+      [`players/${playerKey}`]: null,
+      playerOrder: remainingOrder.join(',')
+    };
+
+    // If it was the exiting player's turn, pass it to the next active player
+    if (room.turn === name) {
+      const myIdx = allOrder.indexOf(name);
+      let next = remainingActive[0];
+      for (const n of remainingActive) {
+        if (allOrder.indexOf(n) > myIdx) { next = n; break; }
+      }
+      updates.turn = next;
+    }
+
+    // Last player standing wins automatically
+    if (remainingActive.length === 1) {
+      updates.winner = remainingActive[0];
+    }
+
+    db.ref(`rooms/${code}`).update(updates);
+  }
+
+  // ── Reset ──────────────────────────────────────────────────────
+
   function reset() {
     clearSession();
     if (roomRef) { roomRef.off(); roomRef = null; }
@@ -537,6 +606,7 @@
 
   startBtn.addEventListener('click', startGame);
   playAgainBtn.addEventListener('click', reset);
+  exitBtn.addEventListener('click', exitGame);
 
   nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
   roomInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
