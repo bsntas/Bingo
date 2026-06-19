@@ -140,7 +140,11 @@
         kit: room.started && kit ? JSON.stringify(kit) : ''
       });
     }
-    db.ref(`rooms/${roomCode}/players/${playerKey}`).onDisconnect().remove();
+    // Register onDisconnect only in lobby; once game starts the cancel
+    // above takes over so players survive brief disconnections
+    if (!room.started) {
+      db.ref(`rooms/${roomCode}/players/${playerKey}`).onDisconnect().remove();
+    }
 
     if (isHost) {
       roomCodeBox.style.display = '';
@@ -317,6 +321,10 @@
         const me = activePlayers[safeKey(myName)];
         myKit = me?.kit ? JSON.parse(me.kit) : null;
         saveSession();
+
+        // Cancel onDisconnect so brief disconnections during the game
+        // don't remove the player from the room
+        db.ref(`rooms/${code}/players/${safeKey(myName)}`).onDisconnect().cancel();
 
         buildBoard();
         renderGamePlayers();
@@ -548,8 +556,10 @@
         kit: myKit ? JSON.stringify(myKit) : ''
       });
     }
-    // Re-register onDisconnect for this new connection
-    db.ref(`rooms/${myRoomCode}/players/${playerKey}`).onDisconnect().remove();
+    // Re-register onDisconnect only during lobby — game phase uses cancel()
+    if (!gameStarted) {
+      db.ref(`rooms/${myRoomCode}/players/${playerKey}`).onDisconnect().remove();
+    }
   });
 
   // ── Auto-restore session on page load ─────────────────────────
