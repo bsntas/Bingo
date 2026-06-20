@@ -6,7 +6,7 @@
   let myRoomCode   = '';
   let myIsHost     = false;
   let myKit        = null;   // int[N][N]
-  let gridSize     = 5;
+  let gridSize     = 9;
   let seenNums     = new Set();  // numbers already processed locally
   let myScore      = 0;
   let playerOrder  = [];    // ordered list of names (join order)
@@ -43,9 +43,9 @@
   const playAgainBtn = $('play-again-btn');
   const exitBtn     = $('exit-btn');
   const toastEl     = $('toast');
-  const gridSizeWrap   = $('grid-size-wrap');
-  const gridSizeLabels = [3,4,5].map(n => $(`lbl-size-${n}`));
-  const gridSizeRadios = [3,4,5].map(n => $(`radio-size-${n}`));
+  const gridSizeWrap  = $('grid-size-wrap');
+  const gridSizeInput = $('grid-size-input');
+  const gridSizeHint  = $('grid-size-hint');
 
   // ── Utilities ─────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@
     if (room.winner) { clearSession(); return false; }
 
     myName = name; myRoomCode = roomCode; myIsHost = isHost; myKit = kit;
-    gridSize = savedGridSize || room.gridSize || 5;
+    gridSize = savedGridSize || room.gridSize || 9;
 
     const playerKey = safeKey(name);
     if (!room.players?.[playerKey]) {
@@ -179,21 +179,27 @@
   lblHost.addEventListener('click', () => { radioHost.checked = true; syncRoleUI(); });
   lblJoin.addEventListener('click', () => { radioJoin.checked = true; syncRoleUI(); });
 
-  function syncGridSizeUI() {
-    gridSizeRadios.forEach((r, i) => {
-      gridSizeLabels[i].classList.toggle('selected', r.checked);
-      if (r.checked) gridSize = [3,4,5][i];
-    });
+  function readGridSize() {
+    let val = parseInt(gridSizeInput.value, 10);
+    if (isNaN(val)) val = 9;
+    val = Math.max(9, Math.min(15, val));
+    gridSize = val;
+    gridSizeHint.textContent = `${val} × ${val} grid · ${val * val} numbers`;
+    return val;
   }
-  gridSizeRadios.forEach(r => r.addEventListener('change', syncGridSizeUI));
-  gridSizeLabels.forEach((lbl, i) => lbl.addEventListener('click', () => {
-    gridSizeRadios[i].checked = true;
-    syncGridSizeUI();
-  }));
+  gridSizeInput.addEventListener('input', readGridSize);
+  gridSizeInput.addEventListener('blur', () => {
+    let val = parseInt(gridSizeInput.value, 10);
+    if (isNaN(val) || val < 9) val = 9;
+    if (val > 15) val = 15;
+    gridSizeInput.value = val;
+    readGridSize();
+  });
 
   // ── Host game ─────────────────────────────────────────────────
 
   async function hostGame(name) {
+    readGridSize();
     continueBtn.disabled = true;
     let code, snap;
     let tries = 0;
@@ -338,7 +344,7 @@
         currentTurn  = room.turn;
         seenNums     = new Set();
         myScore      = 0;
-        gridSize     = room.gridSize || 5;
+        gridSize     = room.gridSize || 9;
 
         const me = activePlayers[safeKey(myName)];
         myKit = me?.kit ? JSON.parse(me.kit) : null;
@@ -427,6 +433,7 @@
     if (!myKit) return;
     const N = myKit.length;
     board.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+    board.style.fontSize = `${Math.max(0.6, 7 / N).toFixed(2)}rem`;
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
         const num = myKit[r][c];
@@ -454,8 +461,8 @@
   }
 
   function updateScore(score) {
-    const n = Math.min(score, gridSize);
-    bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < n));
+    const lit = gridSize > 0 ? Math.min(5, Math.floor(score / gridSize * 5)) : 0;
+    bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < lit));
   }
 
   function updateInstruction() {
@@ -503,7 +510,8 @@
     wrap.style.display = '';
     const N = myKit.length;
     boardEl.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
-    wrap.style.maxWidth = `${N * 60}px`;
+    boardEl.style.fontSize = `${Math.max(0.55, 5 / N).toFixed(2)}rem`;
+    wrap.style.maxWidth = `${N * 55}px`;
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
         const num = myKit[r][c];
@@ -532,7 +540,7 @@
 
     // Reset local state and go to start immediately
     myName = ''; myRoomCode = ''; myIsHost = false;
-    myKit = null; gridSize = 5; seenNums = new Set(); myScore = 0;
+    myKit = null; seenNums = new Set(); myScore = 0;
     playerOrder = []; activePlayers = {}; currentTurn = '';
     gameStarted = false; gameOver = false;
     startError.textContent = '';
@@ -599,7 +607,7 @@
     }
 
     myName = ''; myRoomCode = ''; myIsHost = false;
-    myKit = null; gridSize = 5; seenNums = new Set(); myScore = 0;
+    myKit = null; seenNums = new Set(); myScore = 0;
     playerOrder = []; activePlayers = {}; currentTurn = '';
     gameStarted = false; gameOver = false;
     startError.textContent = '';
