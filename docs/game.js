@@ -376,6 +376,7 @@
             myScore = newScore;
             updateScore(myScore);
           }
+          updateStrikethrough();
           // Claim win via transaction so only the first writer wins
           if (myScore >= 5) {
             db.ref(`rooms/${code}/winner`).transaction(current => {
@@ -464,6 +465,25 @@
     bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < Math.min(score, 5)));
   }
 
+  function updateStrikethrough() {
+    if (!myKit) return;
+    const N = myKit.length;
+    const completedRows = new Set();
+    const completedCols = new Set();
+    for (let r = 0; r < N; r++) {
+      if (myKit[r].every(n => seenNums.has(n))) completedRows.add(r);
+    }
+    for (let c = 0; c < N; c++) {
+      if (myKit.every(row => seenNums.has(row[c]))) completedCols.add(c);
+    }
+    board.querySelectorAll('.cell').forEach((cell, idx) => {
+      const r = Math.floor(idx / N);
+      const c = idx % N;
+      cell.classList.toggle('strike-h', completedRows.has(r));
+      cell.classList.toggle('strike-v', completedCols.has(c));
+    });
+  }
+
   function updateInstruction() {
     if (currentTurn === myName) {
       instruction.textContent = 'Your turn — tap a number!';
@@ -511,11 +531,23 @@
     boardEl.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
     boardEl.style.fontSize = `${Math.max(0.55, 5 / N).toFixed(2)}rem`;
     wrap.style.maxWidth = `${N * 55}px`;
+    const completedRows = new Set();
+    const completedCols = new Set();
+    for (let r = 0; r < N; r++) {
+      if (myKit[r].every(n => seenNums.has(n))) completedRows.add(r);
+    }
+    for (let c = 0; c < N; c++) {
+      if (myKit.every(row => seenNums.has(row[c]))) completedCols.add(c);
+    }
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
         const num = myKit[r][c];
         const cell = document.createElement('div');
-        cell.className = 'preview-cell' + (seenNums.has(num) ? ' marked' : '');
+        let cls = 'preview-cell';
+        if (seenNums.has(num)) cls += ' marked';
+        if (completedRows.has(r)) cls += ' strike-h';
+        if (completedCols.has(c)) cls += ' strike-v';
+        cell.className = cls;
         cell.textContent = num;
         boardEl.appendChild(cell);
       }
