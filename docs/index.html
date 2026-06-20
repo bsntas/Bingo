@@ -168,7 +168,6 @@
 
     #bingo-board {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
       gap: 4px;
       width: 100%;
       pointer-events: none;
@@ -217,11 +216,10 @@
     #gameover-screen .go-title { font-size: 3.5rem; font-weight: 900; color: var(--red); text-shadow: 0 0 20px rgba(248,113,113,0.4); }
     #winner-text { font-size: 1.8rem; font-weight: 700; text-align: center; }
 
-    #gameover-board-wrap { width: 100%; max-width: 280px; }
+    #gameover-board-wrap { width: 100%; }
     #gameover-board-wrap .section-label { text-align: center; margin-bottom: 0.5rem; }
     #gameover-board {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
       gap: 4px;
       width: 100%;
     }
@@ -297,6 +295,20 @@
         </label>
         <label class="role-label" id="lbl-join">
           <input type="radio" name="role" value="join" id="radio-join"> Join a game
+        </label>
+      </div>
+    </div>
+    <div id="grid-size-wrap">
+      <div class="section-label">Grid Size</div>
+      <div class="role-group" style="grid-template-columns: repeat(3, 1fr)">
+        <label class="role-label" id="lbl-size-3">
+          <input type="radio" name="grid-size" value="3" id="radio-size-3"> 3 × 3
+        </label>
+        <label class="role-label" id="lbl-size-4">
+          <input type="radio" name="grid-size" value="4" id="radio-size-4"> 4 × 4
+        </label>
+        <label class="role-label selected" id="lbl-size-5">
+          <input type="radio" name="grid-size" value="5" id="radio-size-5" checked> 5 × 5
         </label>
       </div>
     </div>

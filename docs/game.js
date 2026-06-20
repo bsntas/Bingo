@@ -5,7 +5,8 @@
   let myName       = '';
   let myRoomCode   = '';
   let myIsHost     = false;
-  let myKit        = null;   // int[5][5]
+  let myKit        = null;   // int[N][N]
+  let gridSize     = 5;
   let seenNums     = new Set();  // numbers already processed locally
   let myScore      = 0;
   let playerOrder  = [];    // ordered list of names (join order)
@@ -42,6 +43,9 @@
   const playAgainBtn = $('play-again-btn');
   const exitBtn     = $('exit-btn');
   const toastEl     = $('toast');
+  const gridSizeWrap   = $('grid-size-wrap');
+  const gridSizeLabels = [3,4,5].map(n => $(`lbl-size-${n}`));
+  const gridSizeRadios = [3,4,5].map(n => $(`radio-size-${n}`));
 
   // ── Utilities ─────────────────────────────────────────────────
 
@@ -55,22 +59,24 @@
     return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
   }
 
-  function generateKit() {
-    const nums = Array.from({ length: 25 }, (_, i) => i + 1);
-    for (let i = 24; i > 0; i--) {
+  function generateKit(N) {
+    const total = N * N;
+    const nums = Array.from({ length: total }, (_, i) => i + 1);
+    for (let i = total - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [nums[i], nums[j]] = [nums[j], nums[i]];
     }
     const kit = [];
-    for (let i = 0; i < 5; i++) kit.push(nums.slice(i * 5, i * 5 + 5));
+    for (let i = 0; i < N; i++) kit.push(nums.slice(i * N, i * N + N));
     return kit;
   }
 
-  // Count completed rows + columns. Win at 5.
+  // Count completed rows + columns. Win at gridSize lines.
   function calcScore(kit, marked) {
+    const N = kit.length;
     let s = 0;
-    for (let r = 0; r < 5; r++) if (kit[r].every(n => marked.has(n))) s++;
-    for (let c = 0; c < 5; c++) if (kit.every(row => marked.has(row[c]))) s++;
+    for (let r = 0; r < N; r++) if (kit[r].every(n => marked.has(n))) s++;
+    for (let c = 0; c < N; c++) if (kit.every(row => marked.has(row[c]))) s++;
     return s;
   }
 
@@ -100,7 +106,7 @@
     try {
       localStorage.setItem('bingo_session', JSON.stringify({
         name: myName, roomCode: myRoomCode, isHost: myIsHost,
-        kit: myKit, ts: Date.now()
+        kit: myKit, gridSize, ts: Date.now()
       }));
     } catch (e) {}
   }
@@ -121,7 +127,7 @@
       clearSession(); return false;
     }
 
-    const { name, roomCode, isHost, kit } = saved;
+    const { name, roomCode, isHost, kit, gridSize: savedGridSize } = saved;
     let snap;
     try { snap = await db.ref(`rooms/${roomCode}`).once('value'); }
     catch (e) { return false; }
@@ -132,6 +138,7 @@
     if (room.winner) { clearSession(); return false; }
 
     myName = name; myRoomCode = roomCode; myIsHost = isHost; myKit = kit;
+    gridSize = savedGridSize || room.gridSize || 5;
 
     const playerKey = safeKey(name);
     if (!room.players?.[playerKey]) {
@@ -165,11 +172,24 @@
     lblHost.classList.toggle('selected', host);
     lblJoin.classList.toggle('selected', !host);
     roomWrap.style.display = host ? 'none' : '';
+    gridSizeWrap.style.display = host ? '' : 'none';
   }
   radioHost.addEventListener('change', syncRoleUI);
   radioJoin.addEventListener('change', syncRoleUI);
   lblHost.addEventListener('click', () => { radioHost.checked = true; syncRoleUI(); });
   lblJoin.addEventListener('click', () => { radioJoin.checked = true; syncRoleUI(); });
+
+  function syncGridSizeUI() {
+    gridSizeRadios.forEach((r, i) => {
+      gridSizeLabels[i].classList.toggle('selected', r.checked);
+      if (r.checked) gridSize = [3,4,5][i];
+    });
+  }
+  gridSizeRadios.forEach(r => r.addEventListener('change', syncGridSizeUI));
+  gridSizeLabels.forEach((lbl, i) => lbl.addEventListener('click', () => {
+    gridSizeRadios[i].checked = true;
+    syncGridSizeUI();
+  }));
 
   // ── Host game ─────────────────────────────────────────────────
 
@@ -193,6 +213,7 @@
       turn: '',
       winner: '',
       playerOrder: name,
+      gridSize,
       players: { [safeKey(name)]: { name, isHost: true, score: 0, kit: '' } }
     });
 
@@ -262,7 +283,7 @@
 
     // Host generates and assigns every player's bingo card
     activeNames.forEach(n => {
-      updates[`players/${safeKey(n)}/kit`] = JSON.stringify(generateKit());
+      updates[`players/${safeKey(n)}/kit`] = JSON.stringify(generateKit(gridSize));
     });
 
     await db.ref(`rooms/${myRoomCode}`).update(updates);
@@ -317,6 +338,7 @@
         currentTurn  = room.turn;
         seenNums     = new Set();
         myScore      = 0;
+        gridSize     = room.gridSize || 5;
 
         const me = activePlayers[safeKey(myName)];
         myKit = me?.kit ? JSON.parse(me.kit) : null;
@@ -349,7 +371,7 @@
             updateScore(myScore);
           }
           // Claim win via transaction so only the first writer wins
-          if (myScore >= 5) {
+          if (myScore >= gridSize) {
             db.ref(`rooms/${code}/winner`).transaction(current => {
               if (current === null || current === '') return myName;
               return undefined; // abort — someone already claimed it
@@ -403,8 +425,10 @@
   function buildBoard() {
     board.innerHTML = '';
     if (!myKit) return;
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 5; c++) {
+    const N = myKit.length;
+    board.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
         const num = myKit[r][c];
         const cell = document.createElement('div');
         cell.className = 'cell';
@@ -430,7 +454,7 @@
   }
 
   function updateScore(score) {
-    const n = Math.min(score, 5);
+    const n = Math.min(score, gridSize);
     bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < n));
   }
 
@@ -477,8 +501,11 @@
     boardEl.innerHTML = '';
     if (!myKit) { wrap.style.display = 'none'; return; }
     wrap.style.display = '';
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 5; c++) {
+    const N = myKit.length;
+    boardEl.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+    wrap.style.maxWidth = `${N * 60}px`;
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
         const num = myKit[r][c];
         const cell = document.createElement('div');
         cell.className = 'preview-cell' + (seenNums.has(num) ? ' marked' : '');
@@ -505,7 +532,7 @@
 
     // Reset local state and go to start immediately
     myName = ''; myRoomCode = ''; myIsHost = false;
-    myKit = null; seenNums = new Set(); myScore = 0;
+    myKit = null; gridSize = 5; seenNums = new Set(); myScore = 0;
     playerOrder = []; activePlayers = {}; currentTurn = '';
     gameStarted = false; gameOver = false;
     startError.textContent = '';
@@ -572,7 +599,7 @@
     }
 
     myName = ''; myRoomCode = ''; myIsHost = false;
-    myKit = null; seenNums = new Set(); myScore = 0;
+    myKit = null; gridSize = 5; seenNums = new Set(); myScore = 0;
     playerOrder = []; activePlayers = {}; currentTurn = '';
     gameStarted = false; gameOver = false;
     startError.textContent = '';
