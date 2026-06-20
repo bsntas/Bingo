@@ -71,7 +71,7 @@
       margin-bottom: 0.3rem;
     }
 
-    input[type="text"] {
+    input[type="text"], input[type="number"] {
       width: 100%;
       padding: 0.75rem 1rem;
       background: var(--bg);
@@ -82,9 +82,12 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); }
     input[type="text"]::placeholder { color: var(--text-dim); }
     input[type="text"].uppercase { text-transform: uppercase; letter-spacing: 0.12em; }
+    input[type="number"] { text-align: center; font-size: 1.5rem; font-weight: 700; -moz-appearance: textfield; }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
 
     .role-group { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
     .role-label {
@@ -299,18 +302,9 @@
       </div>
     </div>
     <div id="grid-size-wrap">
-      <div class="section-label">Grid Size</div>
-      <div class="role-group" style="grid-template-columns: repeat(3, 1fr)">
-        <label class="role-label" id="lbl-size-3">
-          <input type="radio" name="grid-size" value="3" id="radio-size-3"> 3 × 3
-        </label>
-        <label class="role-label" id="lbl-size-4">
-          <input type="radio" name="grid-size" value="4" id="radio-size-4"> 4 × 4
-        </label>
-        <label class="role-label selected" id="lbl-size-5">
-          <input type="radio" name="grid-size" value="5" id="radio-size-5" checked> 5 × 5
-        </label>
-      </div>
+      <div class="section-label">Grid Size (9 – 15)</div>
+      <input type="number" id="grid-size-input" min="9" max="15" value="9" inputmode="numeric">
+      <p class="dim-text" id="grid-size-hint" style="margin-top:-0.25rem">9 × 9 grid · 81 numbers</p>
     </div>
     <div id="room-input-wrap" style="display:none">
       <div class="section-label">Room Code</div>
