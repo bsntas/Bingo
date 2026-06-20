@@ -6,7 +6,7 @@
   let myRoomCode   = '';
   let myIsHost     = false;
   let myKit        = null;   // int[N][N]
-  let gridSize     = 9;
+  let gridSize     = 5;
   let seenNums     = new Set();  // numbers already processed locally
   let myScore      = 0;
   let playerOrder  = [];    // ordered list of names (join order)
@@ -138,7 +138,7 @@
     if (room.winner) { clearSession(); return false; }
 
     myName = name; myRoomCode = roomCode; myIsHost = isHost; myKit = kit;
-    gridSize = savedGridSize || room.gridSize || 9;
+    gridSize = savedGridSize || room.gridSize || 5;
 
     const playerKey = safeKey(name);
     if (!room.players?.[playerKey]) {
@@ -182,7 +182,7 @@
   function readGridSize() {
     let val = parseInt(gridSizeInput.value, 10);
     if (isNaN(val)) val = 9;
-    val = Math.max(9, Math.min(15, val));
+    val = Math.max(5, Math.min(15, val));
     gridSize = val;
     gridSizeHint.textContent = `${val} × ${val} grid · ${val * val} numbers`;
     return val;
@@ -190,7 +190,7 @@
   gridSizeInput.addEventListener('input', readGridSize);
   gridSizeInput.addEventListener('blur', () => {
     let val = parseInt(gridSizeInput.value, 10);
-    if (isNaN(val) || val < 9) val = 9;
+    if (isNaN(val) || val < 5) val = 5;
     if (val > 15) val = 15;
     gridSizeInput.value = val;
     readGridSize();
@@ -344,7 +344,7 @@
         currentTurn  = room.turn;
         seenNums     = new Set();
         myScore      = 0;
-        gridSize     = room.gridSize || 9;
+        gridSize     = room.gridSize || 5;
 
         const me = activePlayers[safeKey(myName)];
         myKit = me?.kit ? JSON.parse(me.kit) : null;
@@ -377,7 +377,7 @@
             updateScore(myScore);
           }
           // Claim win via transaction so only the first writer wins
-          if (myScore >= gridSize) {
+          if (myScore >= 5) {
             db.ref(`rooms/${code}/winner`).transaction(current => {
               if (current === null || current === '') return myName;
               return undefined; // abort — someone already claimed it
@@ -461,8 +461,7 @@
   }
 
   function updateScore(score) {
-    const lit = gridSize > 0 ? Math.min(5, Math.floor(score / gridSize * 5)) : 0;
-    bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < lit));
+    bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < Math.min(score, 5)));
   }
 
   function updateInstruction() {
