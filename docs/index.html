@@ -39,6 +39,10 @@
 
     .screen { display: none; width: 100%; max-width: 460px; flex-direction: column; align-items: center; gap: 1.5rem; }
     .screen.active { display: flex; }
+    /* Game screen stretches children to full width so the board always fills the container */
+    #game-screen { align-items: stretch; }
+    #bingo-score { justify-content: center; }
+    #exit-btn { align-self: center; }
 
     .title {
       font-size: 3rem;
