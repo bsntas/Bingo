@@ -190,11 +190,25 @@
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
       transition: background 0.15s, border-color 0.15s;
+      position: relative;
+      overflow: hidden;
     }
     #bingo-board.active { pointer-events: auto; }
     #bingo-board.active .cell:not(.marked) { cursor: pointer; }
     #bingo-board.active .cell:not(.marked):hover { background: var(--surface2); border-color: var(--accent); }
     .cell.marked { background: var(--marked); border-color: var(--accent-dim); color: var(--marked-text); cursor: default; }
+    .cell.strike-h::before {
+      content: ''; position: absolute;
+      left: 0; right: 0; top: 50%;
+      height: 2px; background: var(--accent); opacity: 0.85;
+      transform: translateY(-50%); pointer-events: none;
+    }
+    .cell.strike-v::after {
+      content: ''; position: absolute;
+      top: 0; bottom: 0; left: 50%;
+      width: 2px; background: var(--accent); opacity: 0.85;
+      transform: translateX(-50%); pointer-events: none;
+    }
 
     #game-players-section { width: 100%; }
 
@@ -237,11 +251,25 @@
       font-size: 0.95rem;
       font-weight: 700;
       color: var(--text-dim);
+      position: relative;
+      overflow: hidden;
     }
     .preview-cell.marked {
       background: var(--marked);
       border-color: var(--accent-dim);
       color: var(--marked-text);
+    }
+    .preview-cell.strike-h::before {
+      content: ''; position: absolute;
+      left: 0; right: 0; top: 50%;
+      height: 2px; background: var(--accent); opacity: 0.85;
+      transform: translateY(-50%); pointer-events: none;
+    }
+    .preview-cell.strike-v::after {
+      content: ''; position: absolute;
+      top: 0; bottom: 0; left: 50%;
+      width: 2px; background: var(--accent); opacity: 0.85;
+      transform: translateX(-50%); pointer-events: none;
     }
 
     #toast {
