@@ -687,6 +687,14 @@ class BingoApp {
       this.startGame();
     });
 
+    $('btn-copy').addEventListener('click', () => {
+      const code = this.roomCode;
+      if (!code) return;
+      navigator.clipboard.writeText(code)
+        .then(() => this.showToast('Room code copied!'))
+        .catch(() => this.showToast(code));
+    });
+
     $('play-again-btn').addEventListener('click', () => this.playAgain());
     $('exit-btn').addEventListener('click', () => this.exitGame());
   }
