@@ -20,7 +20,7 @@ function generateKit(N) {
   return kit;
 }
 
-// Rows + columns only. Win at score >= N.
+// Rows + columns only. Win when 5 lines are complete (always fixed at 5).
 function calcScore(kit, calledSet) {
   const N = kit.length;
   let s = 0;
@@ -350,7 +350,7 @@ class BingoApp {
     let winner = null;
     for (const p of gs.players) {
       p.score = calcScore(p.kit, gs.calledNumbers);
-      if (p.score >= gs.gridSize && !winner) winner = p;
+      if (p.score >= 5 && !winner) winner = p;
     }
 
     if (winner) {
@@ -556,12 +556,25 @@ class BingoApp {
     board.style.fontSize = `${Math.max(0.6, 7 / N).toFixed(2)}rem`;
     board.innerHTML = '';
 
+    const doneRows = new Set();
+    const doneCols = new Set();
+    for (let r = 0; r < N; r++) {
+      if (this.myKit[r].every(n => calledSet.has(n))) doneRows.add(r);
+    }
+    for (let c = 0; c < N; c++) {
+      if (this.myKit.every(row => calledSet.has(row[c]))) doneCols.add(c);
+    }
+
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
         const num = this.myKit[r][c];
         const isMarked = calledSet.has(num);
         const cell = document.createElement('div');
-        cell.className = 'cell' + (isMarked ? ' marked' : '');
+        let cls = 'cell';
+        if (isMarked)       cls += ' marked';
+        if (doneRows.has(r)) cls += ' strike-h';
+        if (doneCols.has(c)) cls += ' strike-v';
+        cell.className = cls;
         cell.textContent = num;
         cell.dataset.num = num;
         board.appendChild(cell);
@@ -640,11 +653,25 @@ class BingoApp {
     boardEl.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
     boardEl.style.fontSize = `${Math.max(0.55, 5 / N).toFixed(2)}rem`;
     if (wrap) wrap.style.maxWidth = `${N * 55}px`;
+
+    const doneRows = new Set();
+    const doneCols = new Set();
+    for (let r = 0; r < N; r++) {
+      if (this.myKit[r].every(n => calledSet.has(n))) doneRows.add(r);
+    }
+    for (let c = 0; c < N; c++) {
+      if (this.myKit.every(row => calledSet.has(row[c]))) doneCols.add(c);
+    }
+
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
         const num = this.myKit[r][c];
         const cell = document.createElement('div');
-        cell.className = 'preview-cell' + (calledSet.has(num) ? ' marked' : '');
+        let cls = 'preview-cell';
+        if (calledSet.has(num))  cls += ' marked';
+        if (doneRows.has(r))     cls += ' strike-h';
+        if (doneCols.has(c))     cls += ' strike-v';
+        cell.className = cls;
         cell.textContent = num;
         boardEl.appendChild(cell);
       }
