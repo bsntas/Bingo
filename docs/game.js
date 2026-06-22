@@ -1,417 +1,500 @@
-(() => {
-  const db = firebase.database();
+import { joinRoom, selfId } from 'https://esm.sh/trystero@0.21.0/mqtt';
 
-  // ── State ─────────────────────────────────────────────────────
-  let myName       = '';
-  let myRoomCode   = '';
-  let myIsHost     = false;
-  let myKit        = null;   // int[N][N]
-  let gridSize     = 5;
-  let seenNums     = new Set();  // numbers already processed locally
-  let myScore      = 0;
-  let playerOrder  = [];    // ordered list of names (join order)
-  let activePlayers = {};   // { safeKey: {name, isHost, score, kit} }
-  let currentTurn  = '';
-  let gameStarted  = false;
-  let gameOver     = false;
-  let roomRef      = null;
-  let toastTimer   = null;
+const APP_ID = 'bsntas-bingo-v1';
+const ROOM_CONFIG = {
+  appId: APP_ID,
+  brokerUrl: 'wss://broker.hivemq.com:8884/mqtt',
+};
 
-  // ── DOM ───────────────────────────────────────────────────────
-  const $ = id => document.getElementById(id);
-  const screens     = { start: $('start-screen'), lobby: $('lobby-screen'), game: $('game-screen'), gameover: $('gameover-screen') };
-  const nameInput   = $('name-input');
-  const roomInput   = $('room-input');
-  const lblHost     = $('lbl-host');
-  const lblJoin     = $('lbl-join');
-  const radioHost   = $('radio-host');
-  const radioJoin   = $('radio-join');
-  const roomWrap    = $('room-input-wrap');
-  const continueBtn = $('continue-btn');
-  const startError  = $('start-error');
-  const roomCodeBox = $('room-code-box');
-  const roomCodeTxt = $('room-code-text');
-  const lobbyList   = $('lobby-player-list');
-  const playerCount = $('player-count');
-  const startBtn    = $('start-btn');
-  const lobbyStatus = $('lobby-status');
-  const bingoLetters = [0,1,2,3,4].map(i => $(`bl-${i}`));
-  const board       = $('bingo-board');
-  const instruction = $('instruction');
-  const gameList    = $('game-player-list');
-  const winnerText  = $('winner-text');
-  const playAgainBtn = $('play-again-btn');
-  const exitBtn     = $('exit-btn');
-  const toastEl     = $('toast');
-  const gridSizeWrap  = $('grid-size-wrap');
-  const gridSizeInput = $('grid-size-input');
-  const gridSizeHint  = $('grid-size-hint');
+// ── Bingo engine ──────────────────────────────────────────────────────────
 
-  // ── Utilities ─────────────────────────────────────────────────
+function generateKit(N) {
+  const total = N * N;
+  const nums = Array.from({ length: total }, (_, i) => i + 1);
+  for (let i = total - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [nums[i], nums[j]] = [nums[j], nums[i]];
+  }
+  const kit = [];
+  for (let i = 0; i < N; i++) kit.push(nums.slice(i * N, i * N + N));
+  return kit;
+}
 
-  // Firebase keys cannot contain . $ # [ ] /
-  function safeKey(name) {
-    return name.replace(/[.$#[\]/]/g, '_');
+// Rows + columns only. Win at score >= N.
+function calcScore(kit, calledSet) {
+  const N = kit.length;
+  let s = 0;
+  for (let r = 0; r < N; r++) if (kit[r].every(n => calledSet.has(n))) s++;
+  for (let c = 0; c < N; c++) if (kit.every(row => calledSet.has(row[c]))) s++;
+  return s;
+}
+
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+// ── App ───────────────────────────────────────────────────────────────────
+
+class BingoApp {
+  constructor() {
+    this.myName = '';
+    this.isHost = false;
+    this.trRoom = null;
+    this.sendMsg = null;
+    this.hostPeerId = null;
+    this.roomCode = null;
+    this.gridSize = 5;
+
+    // Host-only: full authoritative game state
+    this.gameState = null;
+
+    // Client display state (received from host)
+    this.publicState = null;
+    this.myKit = null;
+
+    this._toastTimer = null;
+    this._heartbeatInterval = null;
+    this._disconnectTimers = new Map();
+    this._reconnecting = false;
+
+    this._bindUI();
+    this._syncRoleUI();
+    this._readGridSize();
   }
 
-  function generateRoomCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  // ── Utilities ─────────────────────────────────────────────────────────
+
+  $(id) { return document.getElementById(id); }
+
+  showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    this.$(`${name}-screen`).classList.add('active');
   }
 
-  function generateKit(N) {
-    const total = N * N;
-    const nums = Array.from({ length: total }, (_, i) => i + 1);
-    for (let i = total - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [nums[i], nums[j]] = [nums[j], nums[i]];
-    }
-    const kit = [];
-    for (let i = 0; i < N; i++) kit.push(nums.slice(i * N, i * N + N));
-    return kit;
+  showToast(msg) {
+    clearTimeout(this._toastTimer);
+    const t = this.$('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    this._toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
   }
 
-  // Count completed rows + columns. Win at gridSize lines.
-  function calcScore(kit, marked) {
-    const N = kit.length;
-    let s = 0;
-    for (let r = 0; r < N; r++) if (kit[r].every(n => marked.has(n))) s++;
-    for (let c = 0; c < N; c++) if (kit.every(row => marked.has(row[c]))) s++;
-    return s;
+  showError(msg) {
+    this.$('start-error').textContent = msg;
+    const btn = this.$('continue-btn');
+    btn.disabled = false;
+    btn.textContent = 'Continue';
   }
 
-  // ── UI helpers ────────────────────────────────────────────────
-
-  function showScreen(name) {
-    Object.values(screens).forEach(s => s.classList.remove('active'));
-    screens[name].classList.add('active');
+  _syncRoleUI() {
+    const host = this.$('radio-host').checked;
+    this.$('lbl-host').classList.toggle('selected', host);
+    this.$('lbl-join').classList.toggle('selected', !host);
+    this.$('room-input-wrap').style.display = host ? 'none' : '';
+    this.$('grid-size-wrap').style.display = host ? '' : 'none';
   }
 
-  function showToast(msg) {
-    clearTimeout(toastTimer);
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3500);
-  }
-
-  function showError(msg) {
-    startError.textContent = msg;
-    continueBtn.disabled = false;
-  }
-
-  // ── Session persistence (survive mobile tab kills) ────────────
-
-  function saveSession() {
-    if (!myRoomCode || !myName || !myKit) return;
-    try {
-      localStorage.setItem('bingo_session', JSON.stringify({
-        name: myName, roomCode: myRoomCode, isHost: myIsHost,
-        kit: myKit, gridSize, ts: Date.now()
-      }));
-    } catch (e) {}
-  }
-
-  function clearSession() {
-    try { localStorage.removeItem('bingo_session'); } catch (e) {}
-  }
-
-  async function tryRestore() {
-    let saved;
-    try {
-      const raw = localStorage.getItem('bingo_session');
-      if (!raw) return false;
-      saved = JSON.parse(raw);
-    } catch (e) { return false; }
-
-    if (!saved || Date.now() - saved.ts > 4 * 60 * 60 * 1000) {
-      clearSession(); return false;
-    }
-
-    const { name, roomCode, isHost, kit, gridSize: savedGridSize } = saved;
-    let snap;
-    try { snap = await db.ref(`rooms/${roomCode}`).once('value'); }
-    catch (e) { return false; }
-
-    if (!snap.exists()) { clearSession(); return false; }
-
-    const room = snap.val();
-    if (room.winner) { clearSession(); return false; }
-
-    myName = name; myRoomCode = roomCode; myIsHost = isHost; myKit = kit;
-    gridSize = savedGridSize || room.gridSize || 5;
-
-    const playerKey = safeKey(name);
-    if (!room.players?.[playerKey]) {
-      await db.ref(`rooms/${roomCode}/players/${playerKey}`).set({
-        name, isHost, score: 0,
-        kit: room.started && kit ? JSON.stringify(kit) : ''
-      });
-    }
-    // Register onDisconnect only in lobby; once game starts the cancel
-    // above takes over so players survive brief disconnections
-    if (!room.started) {
-      db.ref(`rooms/${roomCode}/players/${playerKey}`).onDisconnect().remove();
-    }
-
-    if (isHost) {
-      roomCodeBox.style.display = '';
-      roomCodeTxt.textContent = roomCode;
-      startBtn.style.display = '';
-      startBtn.disabled = !!room.started;
-    }
-
-    attachRoomListener(roomCode);
-    if (!room.started) showScreen('lobby');
-    return true;
-  }
-
-  // ── Role toggle ───────────────────────────────────────────────
-
-  function syncRoleUI() {
-    const host = radioHost.checked;
-    lblHost.classList.toggle('selected', host);
-    lblJoin.classList.toggle('selected', !host);
-    roomWrap.style.display = host ? 'none' : '';
-    gridSizeWrap.style.display = host ? '' : 'none';
-  }
-  radioHost.addEventListener('change', syncRoleUI);
-  radioJoin.addEventListener('change', syncRoleUI);
-  lblHost.addEventListener('click', () => { radioHost.checked = true; syncRoleUI(); });
-  lblJoin.addEventListener('click', () => { radioJoin.checked = true; syncRoleUI(); });
-
-  function readGridSize() {
-    let val = parseInt(gridSizeInput.value, 10);
-    if (isNaN(val)) val = 9;
+  _readGridSize() {
+    let val = parseInt(this.$('grid-size-input').value, 10);
+    if (isNaN(val)) val = 5;
     val = Math.max(5, Math.min(15, val));
-    gridSize = val;
-    gridSizeHint.textContent = `${val} × ${val} grid · ${val * val} numbers`;
+    this.gridSize = val;
+    this.$('grid-size-hint').textContent = `${val} × ${val} grid · ${val * val} numbers`;
     return val;
   }
-  gridSizeInput.addEventListener('input', readGridSize);
-  gridSizeInput.addEventListener('blur', () => {
-    let val = parseInt(gridSizeInput.value, 10);
-    if (isNaN(val) || val < 5) val = 5;
-    if (val > 15) val = 15;
-    gridSizeInput.value = val;
-    readGridSize();
-  });
 
-  // ── Host game ─────────────────────────────────────────────────
+  // ── Host flow ──────────────────────────────────────────────────────────
 
-  async function hostGame(name) {
-    readGridSize();
-    continueBtn.disabled = true;
-    let code, snap;
-    let tries = 0;
-    do {
-      code = generateRoomCode();
-      snap = await db.ref(`rooms/${code}`).once('value');
-      tries++;
-    } while (snap.exists() && tries < 20);
+  createGame() {
+    const name = this.$('name-input').value.trim();
+    if (!name) { this.showError('Please enter your name.'); return; }
+    this._readGridSize();
 
-    myName = name;
-    myRoomCode = code;
-    myIsHost = true;
+    this.myName = name;
+    this.isHost = true;
+    this.roomCode = genCode();
 
-    await db.ref(`rooms/${code}`).set({
-      host: name,
-      started: false,
-      turn: '',
-      winner: '',
-      playerOrder: name,
-      gridSize,
-      players: { [safeKey(name)]: { name, isHost: true, score: 0, kit: '' } }
+    const btn = this.$('continue-btn');
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+
+    this.gameState = {
+      phase: 'lobby',
+      players: [{ id: selfId, name, isHost: true, kit: null, score: 0 }],
+      turnIndex: 0,
+      calledNumbers: new Set(),
+      winner: null,
+      gridSize: this.gridSize,
+    };
+
+    this.trRoom = joinRoom(ROOM_CONFIG, this.roomCode);
+    const [sendMsg, onMsg] = this.trRoom.makeAction('msg');
+    this.sendMsg = sendMsg;
+
+    // Keep MQTT alive when tab is backgrounded
+    this._heartbeatInterval = setInterval(() => {
+      if (this.trRoom && this.gameState) this._broadcastState();
+    }, 25000);
+
+    this.trRoom.onPeerJoin(peerId => {
+      sendMsg({ type: 'host-hello', name: this.myName }, peerId);
     });
 
-    // Remove host's player record on disconnect (full room cleanup is handled by reset())
-    db.ref(`rooms/${code}/players/${safeKey(name)}`).onDisconnect().remove();
+    this.trRoom.onPeerLeave(peerId => {
+      const gs = this.gameState;
+      const player = gs.players.find(p => p.id === peerId);
+      if (!player) return;
 
-    attachRoomListener(code);
-    roomCodeBox.style.display = '';
-    roomCodeTxt.textContent = code;
-    startBtn.style.display = '';
-    startBtn.disabled = true;
-    showScreen('lobby');
-  }
-
-  // ── Join game ──────────────────────────────────────────────────
-
-  async function joinGame(name, code) {
-    continueBtn.disabled = true;
-    const snap = await db.ref(`rooms/${code}`).once('value');
-
-    if (!snap.exists()) { showError('Room not found. Check the code.'); return; }
-
-    const room = snap.val();
-    if (room.started) { showError('Game already started in this room.'); return; }
-    if (room.winner)  { showError('That game is already over.'); return; }
-
-    const players = room.players || {};
-    if (Object.keys(players).length >= 5) { showError('Room is full (max 5 players).'); return; }
-    if (Object.values(players).some(p => p.name === name)) { showError('That name is already taken.'); return; }
-
-    myName = name;
-    myRoomCode = code;
-    myIsHost = false;
-
-    // Atomically append name to the ordered list
-    await db.ref(`rooms/${code}/playerOrder`).transaction(current => {
-      if (!current) return name;
-      return `${current},${name}`;
-    });
-
-    await db.ref(`rooms/${code}/players/${safeKey(name)}`).set({ name, isHost: false, score: 0, kit: '' });
-    db.ref(`rooms/${code}/players/${safeKey(name)}`).onDisconnect().remove();
-
-    attachRoomListener(code);
-    showScreen('lobby');
-  }
-
-  // ── Start game (host only) ────────────────────────────────────
-
-  async function startGame() {
-    startBtn.disabled = true;
-    const snap = await db.ref(`rooms/${myRoomCode}`).once('value');
-    const room = snap.val();
-    const players = room.players || {};
-    const activeNames = Object.values(players).map(p => p.name);
-
-    if (activeNames.length < 2) {
-      showToast('Need at least 2 players.');
-      startBtn.disabled = false;
-      return;
-    }
-
-    // Preserve join order, keep only currently active players
-    const order = (room.playerOrder || '').split(',').filter(n => activeNames.includes(n));
-
-    const updates = { started: true, turn: order[0], playerOrder: order.join(',') };
-
-    // Host generates and assigns every player's bingo card
-    activeNames.forEach(n => {
-      updates[`players/${safeKey(n)}/kit`] = JSON.stringify(generateKit(gridSize));
-    });
-
-    await db.ref(`rooms/${myRoomCode}`).update(updates);
-  }
-
-  // ── Call a number ─────────────────────────────────────────────
-
-  async function callNumber(num) {
-    if (gameOver || !gameStarted || currentTurn !== myName) {
-      showToast("It's not your turn.");
-      return;
-    }
-
-    const snap = await db.ref(`rooms/${myRoomCode}/calledNumbers/${num}`).once('value');
-    if (snap.exists()) { showToast('Number already called.'); return; }
-
-    // Advance turn to next active player
-    const activeOrder = playerOrder.filter(n => activePlayers[safeKey(n)]);
-    const idx = activeOrder.indexOf(myName);
-    const nextTurn = activeOrder[(idx + 1) % activeOrder.length];
-
-    instruction.textContent = `Calling ${num}…`;
-    instruction.classList.remove('my-turn');
-
-    await db.ref(`rooms/${myRoomCode}`).update({
-      [`calledNumbers/${num}`]: true,
-      turn: nextTurn
-    });
-  }
-
-  // ── Firebase room listener ────────────────────────────────────
-
-  function attachRoomListener(code) {
-    roomRef = db.ref(`rooms/${code}`);
-    roomRef.on('value', snap => {
-      if (!snap.exists()) return;
-      const room = snap.val();
-
-      activePlayers = room.players || {};
-      playerOrder   = (room.playerOrder || '').split(',').filter(Boolean);
-
-      renderLobbyPlayers();
-
-      if (room.winner && !gameOver) {
-        gameOver = true;
-        showGameOver(room.winner);
+      if (gs.phase === 'lobby') {
+        gs.players = gs.players.filter(p => p.id !== peerId);
+        this._broadcastState();
         return;
       }
 
-      if (!gameStarted && room.started) {
-        gameStarted  = true;
-        currentTurn  = room.turn;
-        seenNums     = new Set();
-        myScore      = 0;
-        gridSize     = room.gridSize || 5;
+      // In-game: 45 s reconnect window
+      this.showToast(`${player.name} disconnected — waiting…`);
+      const timer = setTimeout(() => {
+        this._disconnectTimers.delete(peerId);
+        const idx = gs.players.findIndex(p => p.id === peerId);
+        if (idx === -1) return;
+        gs.players.splice(idx, 1);
+        if (gs.players.length < 2) {
+          gs.phase = 'game_over';
+          gs.winner = gs.players[0]?.name || null;
+        } else {
+          if (idx < gs.turnIndex) gs.turnIndex--;
+          gs.turnIndex = gs.turnIndex % gs.players.length;
+        }
+        this._broadcastState();
+      }, 45000);
+      this._disconnectTimers.set(peerId, timer);
+    });
 
-        const me = activePlayers[safeKey(myName)];
-        myKit = me?.kit ? JSON.parse(me.kit) : null;
-        saveSession();
+    onMsg((data, peerId) => {
+      if (!this.isHost) return;
 
-        // Cancel onDisconnect so brief disconnections during the game
-        // don't remove the player from the room
-        db.ref(`rooms/${code}/players/${safeKey(myName)}`).onDisconnect().cancel();
-
-        buildBoard();
-        renderGamePlayers();
-        updateScore(0);
-        updateInstruction();
-        showScreen('game');
-      }
-
-      if (gameStarted && !gameOver) {
-        // Process any numbers called since last snapshot
-        const serverNums = Object.keys(room.calledNumbers || {}).map(Number);
-        const fresh = serverNums.filter(n => !seenNums.has(n));
-        fresh.forEach(n => {
-          seenNums.add(n);
-          markCell(n);
-        });
-
-        if (fresh.length > 0 && myKit) {
-          const newScore = calcScore(myKit, seenNums);
-          if (newScore !== myScore) {
-            myScore = newScore;
-            updateScore(myScore);
-          }
-          // Claim win via transaction so only the first writer wins
-          if (myScore >= 5) {
-            db.ref(`rooms/${code}/winner`).transaction(current => {
-              if (current === null || current === '') return myName;
-              return undefined; // abort — someone already claimed it
-            });
+      if (data.type === 'guest-join') {
+        const gs = this.gameState;
+        // Reconnect: find a disconnected player with the same name
+        const disconnId = [...this._disconnectTimers.keys()].find(id =>
+          gs.players.find(p => p.id === id)?.name === data.name);
+        if (disconnId !== undefined) {
+          clearTimeout(this._disconnectTimers.get(disconnId));
+          this._disconnectTimers.delete(disconnId);
+          const player = gs.players.find(p => p.id === disconnId);
+          if (player) {
+            player.id = peerId;
+            this.showToast(`${data.name} reconnected!`);
+            this._broadcastState();
+            return;
           }
         }
 
-        // Always sync turn state on every snapshot — handles reconnects
-        // and window/tab switches where Firebase re-fires the listener
-        currentTurn = room.turn || currentTurn;
-        renderGamePlayers();
-        updateInstruction();
-        setBoardEnabled(currentTurn === myName);
+        if (gs.phase !== 'lobby') { sendMsg({ type: 'error', message: 'Game already started.', fatal: true }, peerId); return; }
+        if (gs.players.length >= 5) { sendMsg({ type: 'error', message: 'Room is full (max 5 players).', fatal: true }, peerId); return; }
+        if (gs.players.some(p => p.name === data.name)) { sendMsg({ type: 'error', message: 'Name already taken in this room.', fatal: true }, peerId); return; }
+
+        gs.players.push({ id: peerId, name: data.name, isHost: false, kit: null, score: 0 });
+        this._broadcastState();
+        return;
       }
 
-      // Update start button state for host
-      if (myIsHost && !room.started) {
-        startBtn.disabled = Object.keys(activePlayers).length < 2;
-        lobbyStatus.textContent = Object.keys(activePlayers).length < 2
-          ? 'Waiting for at least one more player…'
-          : 'Ready — you can start the game!';
+      if (data.type === 'action') { this._processAction(peerId, data); return; }
+      if (data.type === 'ping') { this._broadcastState(); }
+    });
+
+    this._enterLobby();
+    this._saveSession();
+  }
+
+  _enterLobby() {
+    this.showScreen('lobby');
+    this.$('room-code-box').style.display = '';
+    this.$('room-code-text').textContent = this.roomCode;
+    const startBtn = this.$('start-btn');
+    if (this.isHost) {
+      startBtn.style.display = '';
+      startBtn.disabled = true;
+      startBtn.textContent = 'Waiting for players…';
+    } else {
+      startBtn.style.display = 'none';
+    }
+    this._renderLobby();
+  }
+
+  // ── Guest flow ────────────────────────────────────────────────────────
+
+  joinGame() {
+    const name = this.$('name-input').value.trim();
+    const code = this.$('room-input').value.trim().toUpperCase();
+    if (!name) { this.showError('Please enter your name.'); return; }
+    if (!code) { this.showError('Please enter a room code.'); return; }
+
+    this.myName = name;
+    this.isHost = false;
+    this.hostPeerId = null;
+    this.roomCode = code;
+
+    const btn = this.$('continue-btn');
+    btn.disabled = true;
+    btn.textContent = 'Searching…';
+
+    this.trRoom = joinRoom(ROOM_CONFIG, code);
+    const [sendMsg, onMsg] = this.trRoom.makeAction('msg');
+    this.sendMsg = sendMsg;
+
+    const joinTimeout = setTimeout(() => {
+      if (!this.hostPeerId) {
+        this.showError(`Room \"${code}\" not found — check the code and retry.`);
+        this.trRoom?.leave?.();
+        this.trRoom = null;
+      }
+    }, 30000);
+
+    this.trRoom.onPeerLeave(peerId => {
+      if (peerId === this.hostPeerId && this.publicState?.phase !== 'game_over') {
+        this.showToast('Connection lost — reconnecting…');
+        this._attemptReconnect();
+      }
+    });
+
+    onMsg((data, peerId) => {
+      if (this.isHost) return;
+
+      if (data.type === 'host-hello' && !this.hostPeerId) {
+        clearTimeout(joinTimeout);
+        this.hostPeerId = peerId;
+        sendMsg({ type: 'guest-join', name: this.myName }, peerId);
+        // Show lobby immediately while waiting for first state
+        this.showScreen('lobby');
+        this.$('room-code-box').style.display = '';
+        this.$('room-code-text').textContent = code;
+        this.$('start-btn').style.display = 'none';
+        this.$('lobby-status').textContent = 'Connecting…';
+        btn.disabled = false;
+        btn.textContent = 'Continue';
+        this._saveSession();
+        return;
+      }
+
+      if (peerId !== this.hostPeerId) return;
+
+      if (data.type === 'state') {
+        this.publicState = data.public;
+        if (data.kit) {
+          this.myKit = data.kit;
+          this.gridSize = data.public.gridSize || 5;
+        }
+        this._render();
+        return;
+      }
+
+      if (data.type === 'error') {
+        this.showError(data.message);
+        if (data.fatal) {
+          this.trRoom?.leave?.();
+          this.trRoom = null;
+          this.showScreen('start');
+        }
       }
     });
   }
 
-  // ── Render helpers ────────────────────────────────────────────
+  _attemptReconnect() {
+    if (this._reconnecting) return;
+    this._reconnecting = true;
+    const { roomCode, myName } = this;
+    try { this.trRoom?.leave?.(); } catch (_) {}
+    this.trRoom = null;
+    this.sendMsg = null;
+    this.hostPeerId = null;
+    setTimeout(() => {
+      this._reconnecting = false;
+      this.$('name-input').value = myName;
+      this.$('room-input').value = roomCode;
+      this.$('radio-join').checked = true;
+      this._syncRoleUI();
+      this.joinGame();
+    }, 2000);
+  }
 
-  function renderLobbyPlayers() {
-    const list = Object.values(activePlayers);
-    playerCount.textContent = list.length;
-    lobbyList.innerHTML = '';
-    playerOrder.forEach(name => {
-      const p = activePlayers[safeKey(name)];
-      if (!p) return;
+  // ── Action processing (host only) ────────────────────────────────────
+
+  _processAction(playerId, data) {
+    const gs = this.gameState;
+    if (gs.phase !== 'game') return;
+
+    const cur = gs.players[gs.turnIndex];
+    if (!cur || cur.id !== playerId) {
+      const err = "It's not your turn.";
+      if (playerId === selfId) this.showToast(err);
+      else this.sendMsg({ type: 'error', message: err }, playerId);
+      return;
+    }
+
+    if (data.action !== 'commit') return;
+
+    const num = data.number;
+    const total = gs.gridSize * gs.gridSize;
+    if (!Number.isInteger(num) || num < 1 || num > total) return;
+    if (gs.calledNumbers.has(num)) {
+      const err = 'That number was already called.';
+      if (playerId === selfId) this.showToast(err);
+      else this.sendMsg({ type: 'error', message: err }, playerId);
+      return;
+    }
+
+    gs.calledNumbers.add(num);
+
+    let winner = null;
+    for (const p of gs.players) {
+      p.score = calcScore(p.kit, gs.calledNumbers);
+      if (p.score >= gs.gridSize && !winner) winner = p;
+    }
+
+    if (winner) {
+      gs.phase = 'game_over';
+      gs.winner = winner.name;
+    } else {
+      gs.turnIndex = (gs.turnIndex + 1) % gs.players.length;
+    }
+
+    this._broadcastState();
+  }
+
+  // ── State management ──────────────────────────────────────────────────
+
+  _buildPublicState() {
+    const gs = this.gameState;
+    return {
+      phase: gs.phase,
+      players: gs.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost, score: p.score })),
+      turnIndex: gs.turnIndex,
+      calledNumbers: [...gs.calledNumbers],
+      winner: gs.winner,
+      gridSize: gs.gridSize,
+    };
+  }
+
+  _broadcastState() {
+    const pub = this._buildPublicState();
+    this.publicState = pub;
+
+    const gs = this.gameState;
+    if (gs.phase === 'game') {
+      const me = gs.players.find(p => p.id === selfId);
+      if (me) { this.myKit = me.kit; this.gridSize = gs.gridSize; }
+    }
+
+    for (const player of gs.players) {
+      if (player.id === selfId) continue;
+      const msg = { type: 'state', public: pub };
+      if (gs.phase === 'game' && player.kit) msg.kit = player.kit;
+      this.sendMsg(msg, player.id);
+    }
+
+    this._render();
+  }
+
+  sendAction(action) {
+    if (this.isHost) this._processAction(selfId, action);
+    else if (this.hostPeerId && this.sendMsg) this.sendMsg({ type: 'action', ...action }, this.hostPeerId);
+  }
+
+  // ── Game control ──────────────────────────────────────────────────────
+
+  startGame() {
+    if (!this.isHost) return;
+    const gs = this.gameState;
+    if (gs.phase !== 'lobby' || gs.players.length < 2) { this.showToast('Need at least 2 players.'); return; }
+
+    gs.phase = 'game';
+    gs.turnIndex = 0;
+    gs.calledNumbers = new Set();
+    gs.winner = null;
+    for (const p of gs.players) { p.kit = generateKit(gs.gridSize); p.score = 0; }
+
+    this._broadcastState();
+  }
+
+  exitGame() { this._reset(); }
+
+  playAgain() {
+    if (this.isHost) {
+      const gs = this.gameState;
+      gs.phase = 'lobby';
+      gs.turnIndex = 0;
+      gs.calledNumbers = new Set();
+      gs.winner = null;
+      for (const p of gs.players) { p.kit = null; p.score = 0; }
+      this.myKit = null;
+      this._broadcastState();
+    } else {
+      this._reset();
+    }
+  }
+
+  _reset() {
+    clearInterval(this._heartbeatInterval);
+    this._heartbeatInterval = null;
+    for (const t of this._disconnectTimers.values()) clearTimeout(t);
+    this._disconnectTimers.clear();
+    try { this.trRoom?.leave?.(); } catch (_) {}
+    this.trRoom = null;
+    this.sendMsg = null;
+    this.hostPeerId = null;
+    this.roomCode = null;
+    this.gameState = null;
+    this.publicState = null;
+    this.myKit = null;
+    this.isHost = false;
+    this.myName = '';
+    this.gridSize = 5;
+    this._clearSession();
+
+    this.$('start-error').textContent = '';
+    const btn = this.$('continue-btn');
+    btn.disabled = false;
+    btn.textContent = 'Continue';
+    this.$('radio-host').checked = true;
+    this._syncRoleUI();
+    this.$('room-code-box').style.display = 'none';
+    this.$('start-btn').style.display = 'none';
+    this.$('lobby-player-list').innerHTML = '';
+    this.$('game-player-list').innerHTML = '';
+    this.$('bingo-board').innerHTML = '';
+    const goBoard = this.$('gameover-board');
+    if (goBoard) goBoard.innerHTML = '';
+    this._updateScore(0);
+    this.showScreen('start');
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────────
+
+  _render() {
+    if (!this.publicState) return;
+    const { phase } = this.publicState;
+
+    if (phase === 'lobby') {
+      this._enterLobby();
+    } else if (phase === 'game') {
+      this.showScreen('game');
+      this._renderGame();
+    } else if (phase === 'game_over') {
+      this.showScreen('gameover');
+      this._renderGameOver();
+    }
+  }
+
+  _renderLobby() {
+    const players = this.isHost
+      ? this.gameState.players
+      : (this.publicState?.players || []);
+
+    const ul = this.$('lobby-player-list');
+    ul.innerHTML = '';
+    players.forEach(p => {
       const li = document.createElement('li');
       li.textContent = p.name;
       if (p.isHost) {
@@ -420,252 +503,215 @@
         badge.textContent = 'host';
         li.appendChild(badge);
       }
-      lobbyList.appendChild(li);
+      ul.appendChild(li);
     });
 
-    if (!myIsHost) {
-      lobbyStatus.textContent = 'Waiting for host to start the game…';
+    this.$('player-count').textContent = players.length;
+
+    if (this.isHost) {
+      const startBtn = this.$('start-btn');
+      const ready = players.length >= 2;
+      startBtn.disabled = !ready;
+      startBtn.textContent = ready ? 'Start Game' : 'Waiting for players…';
+      this.$('lobby-status').textContent = ready
+        ? 'Ready — you can start the game!'
+        : 'Waiting for at least one more player…';
+    } else {
+      this.$('lobby-status').textContent = 'Waiting for host to start the game…';
     }
   }
 
-  function buildBoard() {
-    board.innerHTML = '';
-    if (!myKit) return;
-    const N = myKit.length;
+  _renderGame() {
+    const st = this.publicState;
+    const N = st.gridSize || this.gridSize || 5;
+    const myIdx = st.players.findIndex(p => p.id === selfId);
+    const isMyTurn = st.turnIndex === myIdx;
+    const curName = st.players[st.turnIndex]?.name || '';
+    const myScore = st.players[myIdx]?.score ?? 0;
+
+    this._updateScore(myScore);
+
+    const instr = this.$('instruction');
+    if (isMyTurn) {
+      instr.textContent = 'Your turn — tap a number!';
+      instr.classList.add('my-turn');
+    } else {
+      instr.textContent = `${curName}'s turn…`;
+      instr.classList.remove('my-turn');
+    }
+
+    this._buildBoard(N, isMyTurn, new Set(st.calledNumbers || []));
+    this._renderGamePlayers(st);
+  }
+
+  _buildBoard(N, isMyTurn, calledSet) {
+    const board = this.$('bingo-board');
+    if (!this.myKit) { board.innerHTML = ''; return; }
+
     board.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
     board.style.fontSize = `${Math.max(0.6, 7 / N).toFixed(2)}rem`;
+    board.innerHTML = '';
+
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
-        const num = myKit[r][c];
+        const num = this.myKit[r][c];
+        const isMarked = calledSet.has(num);
         const cell = document.createElement('div');
-        cell.className = 'cell';
+        cell.className = 'cell' + (isMarked ? ' marked' : '');
         cell.textContent = num;
         cell.dataset.num = num;
-        cell.addEventListener('click', () => callNumber(num));
         board.appendChild(cell);
       }
     }
-    setBoardEnabled(currentTurn === myName);
-  }
 
-  function setBoardEnabled(enabled) {
-    board.classList.toggle('active', enabled);
-  }
-
-  function markCell(num) {
-    board.querySelectorAll('.cell').forEach(c => {
-      if (parseInt(c.dataset.num, 10) === num) {
-        c.classList.add('marked');
-      }
-    });
-  }
-
-  function updateScore(score) {
-    bingoLetters.forEach((el, i) => el.classList.toggle('scored', i < Math.min(score, 5)));
-  }
-
-  function updateInstruction() {
-    if (currentTurn === myName) {
-      instruction.textContent = 'Your turn — tap a number!';
-      instruction.classList.add('my-turn');
-    } else {
-      instruction.textContent = `${currentTurn}'s turn…`;
-      instruction.classList.remove('my-turn');
+    board.classList.toggle('active', isMyTurn);
+    if (isMyTurn) {
+      board.querySelectorAll('.cell:not(.marked)').forEach(cell => {
+        cell.addEventListener('click', () => this._onCellClick(parseInt(cell.dataset.num, 10)));
+      });
     }
   }
 
-  function renderGamePlayers() {
-    gameList.innerHTML = '';
-    playerOrder.forEach(name => {
-      if (!activePlayers[safeKey(name)]) return;
+  _onCellClick(num) {
+    const st = this.publicState;
+    if (!st || st.phase !== 'game') return;
+    const myIdx = st.players.findIndex(p => p.id === selfId);
+    if (st.turnIndex !== myIdx) { this.showToast("It's not your turn."); return; }
+    const instr = this.$('instruction');
+    instr.textContent = `Calling ${num}…`;
+    instr.classList.remove('my-turn');
+    this.$('bingo-board').classList.remove('active');
+    this.sendAction({ action: 'commit', number: num });
+  }
+
+  _renderGamePlayers(st) {
+    const ul = this.$('game-player-list');
+    ul.innerHTML = '';
+    st.players.forEach((p, i) => {
       const li = document.createElement('li');
       const dot = document.createElement('span');
       dot.className = 'turn-dot';
       li.appendChild(dot);
-      li.appendChild(document.createTextNode(name));
-      if (name === currentTurn) li.classList.add('active-turn');
-      gameList.appendChild(li);
+      li.appendChild(document.createTextNode(p.name));
+      if (i === st.turnIndex) li.classList.add('active-turn');
+      ul.appendChild(li);
     });
   }
 
-  function showGameOver(winner) {
-    clearSession();
-    if (winner === myName) {
-      winnerText.textContent = 'You Win! 🎉';
-      winnerText.style.color = 'var(--accent)';
-    } else {
-      winnerText.textContent = `Winner: ${winner}`;
-      winnerText.style.color = 'var(--blue)';
-    }
-    buildGameoverBoard();
-    showScreen('gameover');
+  _updateScore(score) {
+    [0,1,2,3,4].forEach(i => {
+      this.$(`bl-${i}`)?.classList.toggle('scored', i < Math.min(score, 5));
+    });
   }
 
-  function buildGameoverBoard() {
-    const wrap = document.getElementById('gameover-board-wrap');
-    const boardEl = document.getElementById('gameover-board');
+  _renderGameOver() {
+    const st = this.publicState;
+    const el = this.$('winner-text');
+    const isWinner = st.winner === this.myName;
+    el.textContent = isWinner ? 'You Win! 🎉' : `Winner: ${st.winner || 'Unknown'}`;
+    el.style.color = isWinner ? 'var(--accent)' : 'var(--blue)';
+    this._buildGameoverBoard(st);
+  }
+
+  _buildGameoverBoard(st) {
+    const wrap = this.$('gameover-board-wrap');
+    const boardEl = this.$('gameover-board');
     boardEl.innerHTML = '';
-    if (!myKit) { wrap.style.display = 'none'; return; }
-    wrap.style.display = '';
-    const N = myKit.length;
+    if (!this.myKit) { if (wrap) wrap.style.display = 'none'; return; }
+    if (wrap) wrap.style.display = '';
+    const N = this.myKit.length;
+    const calledSet = new Set(st.calledNumbers || []);
     boardEl.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
     boardEl.style.fontSize = `${Math.max(0.55, 5 / N).toFixed(2)}rem`;
-    wrap.style.maxWidth = `${N * 55}px`;
+    if (wrap) wrap.style.maxWidth = `${N * 55}px`;
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
-        const num = myKit[r][c];
+        const num = this.myKit[r][c];
         const cell = document.createElement('div');
-        cell.className = 'preview-cell' + (seenNums.has(num) ? ' marked' : '');
+        cell.className = 'preview-cell' + (calledSet.has(num) ? ' marked' : '');
         cell.textContent = num;
         boardEl.appendChild(cell);
       }
     }
   }
 
-  // ── Reset ──────────────────────────────────────────────────────
+  // ── Session persistence ───────────────────────────────────────────────
 
-  // ── Leave game (mid-game exit) ────────────────────────────────
-
-  async function exitGame() {
-    if (!myRoomCode || !myName) return;
-
-    const code = myRoomCode;
-    const name = myName;
-    const playerKey = safeKey(name);
-
-    // Detach listener before touching Firebase so we don't react to our own removal
-    if (roomRef) { roomRef.off(); roomRef = null; }
-    clearSession();
-
-    // Reset local state and go to start immediately
-    myName = ''; myRoomCode = ''; myIsHost = false;
-    myKit = null; seenNums = new Set(); myScore = 0;
-    playerOrder = []; activePlayers = {}; currentTurn = '';
-    gameStarted = false; gameOver = false;
-    startError.textContent = '';
-    continueBtn.disabled = false;
-    startBtn.style.display = 'none';
-    roomCodeBox.style.display = 'none';
-    board.innerHTML = '';
-    gameList.innerHTML = '';
-    lobbyList.innerHTML = '';
-    document.getElementById('gameover-board').innerHTML = '';
-    updateScore(0);
-    showScreen('start');
-
-    // Update Firebase: remove player, advance turn if needed, check last-player win
-    const snap = await db.ref(`rooms/${code}`).once('value');
-    if (!snap.exists()) return;
-
-    const room = snap.val();
-    const allOrder = (room.playerOrder || '').split(',').filter(Boolean);
-    const remainingOrder = allOrder.filter(n => n !== name);
-    const remainingActive = remainingOrder.filter(n => room.players?.[safeKey(n)]);
-
-    if (remainingActive.length === 0) {
-      db.ref(`rooms/${code}`).remove();
-      return;
-    }
-
-    const updates = {
-      [`players/${playerKey}`]: null,
-      playerOrder: remainingOrder.join(',')
-    };
-
-    // If it was the exiting player's turn, pass it to the next active player
-    if (room.turn === name) {
-      const myIdx = allOrder.indexOf(name);
-      let next = remainingActive[0];
-      for (const n of remainingActive) {
-        if (allOrder.indexOf(n) > myIdx) { next = n; break; }
-      }
-      updates.turn = next;
-    }
-
-    // Last player standing wins automatically
-    if (remainingActive.length === 1) {
-      updates.winner = remainingActive[0];
-    }
-
-    db.ref(`rooms/${code}`).update(updates);
+  _saveSession() {
+    if (!this.roomCode) return;
+    try {
+      localStorage.setItem('bingo_session', JSON.stringify({
+        name: this.myName,
+        roomCode: this.roomCode,
+        isHost: this.isHost,
+        ts: Date.now(),
+      }));
+    } catch (_) {}
   }
 
-  // ── Reset ──────────────────────────────────────────────────────
+  _clearSession() {
+    try { localStorage.removeItem('bingo_session'); } catch (_) {}
+  }
 
-  function reset() {
-    clearSession();
-    if (roomRef) { roomRef.off(); roomRef = null; }
+  // ── UI bindings ───────────────────────────────────────────────────────
 
-    // Clean up Firebase so stale rooms don't affect future games
-    if (myRoomCode && myName) {
-      if (myIsHost) {
-        db.ref(`rooms/${myRoomCode}`).remove();  // host leaving = end the room
+  _bindUI() {
+    const $ = id => document.getElementById(id);
+
+    $('radio-host').addEventListener('change', () => this._syncRoleUI());
+    $('radio-join').addEventListener('change', () => this._syncRoleUI());
+    $('lbl-host').addEventListener('click', () => { $('radio-host').checked = true; this._syncRoleUI(); });
+    $('lbl-join').addEventListener('click', () => { $('radio-join').checked = true; this._syncRoleUI(); });
+
+    $('grid-size-input').addEventListener('input', () => this._readGridSize());
+    $('grid-size-input').addEventListener('blur', () => {
+      let v = parseInt($('grid-size-input').value, 10);
+      if (isNaN(v) || v < 5) v = 5;
+      if (v > 15) v = 15;
+      $('grid-size-input').value = v;
+      this._readGridSize();
+    });
+
+    $('continue-btn').addEventListener('click', () => {
+      $('start-error').textContent = '';
+      if ($('radio-host').checked) this.createGame();
+      else this.joinGame();
+    });
+
+    $('name-input').addEventListener('keydown', e => { if (e.key === 'Enter') $('continue-btn').click(); });
+    $('room-input').addEventListener('keydown', e => { if (e.key === 'Enter') $('continue-btn').click(); });
+
+    $('start-btn').addEventListener('click', () => {
+      if (!this.isHost) return;
+      $('start-btn').disabled = true;
+      this.startGame();
+    });
+
+    $('play-again-btn').addEventListener('click', () => this.playAgain());
+    $('exit-btn').addEventListener('click', () => this.exitGame());
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  window.app = new BingoApp();
+
+  try {
+    const raw = localStorage.getItem('bingo_session');
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (saved && Date.now() - saved.ts < 4 * 60 * 60 * 1000) {
+        if (saved.name) document.getElementById('name-input').value = saved.name;
+        if (!saved.isHost && saved.roomCode) {
+          document.getElementById('room-input').value = saved.roomCode;
+          document.getElementById('radio-join').checked = true;
+          window.app._syncRoleUI();
+          window.app.showToast(`Tap \"Continue\" to rejoin ${saved.roomCode}`);
+        }
       } else {
-        db.ref(`rooms/${myRoomCode}/players/${safeKey(myName)}`).remove();
+        localStorage.removeItem('bingo_session');
       }
     }
-
-    myName = ''; myRoomCode = ''; myIsHost = false;
-    myKit = null; seenNums = new Set(); myScore = 0;
-    playerOrder = []; activePlayers = {}; currentTurn = '';
-    gameStarted = false; gameOver = false;
-    startError.textContent = '';
-    continueBtn.disabled = false;
-    startBtn.style.display = 'none';
-    roomCodeBox.style.display = 'none';
-    lobbyList.innerHTML = '';
-    gameList.innerHTML = '';
-    board.innerHTML = '';
-    document.getElementById('gameover-board').innerHTML = '';
-    updateScore(0);
-    showScreen('start');
+  } catch (_) {
+    localStorage.removeItem('bingo_session');
   }
-
-  // ── Event wiring ───────────────────────────────────────────────
-
-  continueBtn.addEventListener('click', async () => {
-    startError.textContent = '';
-    const name = nameInput.value.trim();
-    if (!name) { showError('Please enter your name.'); return; }
-
-    if (radioHost.checked) {
-      await hostGame(name);
-    } else {
-      const code = roomInput.value.trim().toUpperCase();
-      if (!code) { showError('Please enter a room code.'); return; }
-      await joinGame(name, code);
-    }
-  });
-
-  startBtn.addEventListener('click', startGame);
-  playAgainBtn.addEventListener('click', reset);
-  exitBtn.addEventListener('click', exitGame);
-
-  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
-  roomInput.addEventListener('keydown', e => { if (e.key === 'Enter') continueBtn.click(); });
-
-  // ── Reconnection guard ────────────────────────────────────────
-  // When the mobile browser backgrounds the tab, Firebase drops the
-  // connection and onDisconnect fires (removing the player). If the
-  // page isn't reloaded, tryRestore() never runs. This listener
-  // re-registers the player every time Firebase comes back online.
-  db.ref('.info/connected').on('value', async snap => {
-    if (!snap.val() || !myRoomCode || !myName) return;
-    const playerKey = safeKey(myName);
-    const playerSnap = await db.ref(`rooms/${myRoomCode}/players/${playerKey}`).once('value');
-    if (!playerSnap.exists()) {
-      await db.ref(`rooms/${myRoomCode}/players/${playerKey}`).set({
-        name: myName, isHost: myIsHost, score: 0,
-        kit: myKit ? JSON.stringify(myKit) : ''
-      });
-    }
-    // Re-register onDisconnect only during lobby — game phase uses cancel()
-    if (!gameStarted) {
-      db.ref(`rooms/${myRoomCode}/players/${playerKey}`).onDisconnect().remove();
-    }
-  });
-
-  // ── Auto-restore session on page load ─────────────────────────
-  tryRestore();
-
-})();
+});

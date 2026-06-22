@@ -3,9 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
   <title>Bingo</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,7 +36,6 @@
 
     .screen { display: none; width: 100%; max-width: 460px; flex-direction: column; align-items: center; gap: 1.5rem; }
     .screen.active { display: flex; }
-    /* Game screen stretches children to full width so the board always fills the container */
     #game-screen { align-items: stretch; }
     #bingo-score { justify-content: center; }
     #exit-btn { align-self: center; }
@@ -131,7 +127,24 @@
       text-align: center;
     }
     .room-code-box .label { font-size: 0.78rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
-    .room-code-box .code { font-size: 2.5rem; font-weight: 900; letter-spacing: 0.3em; color: var(--blue); margin-top: 0.25rem; }
+    .room-code-box .code-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 0.25rem;
+    }
+    .room-code-box .code { font-size: 2.5rem; font-weight: 900; letter-spacing: 0.3em; color: var(--blue); }
+    .btn-copy {
+      padding: 0.4rem 0.9rem;
+      font-size: 0.82rem;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 0.4rem;
+      width: auto;
+    }
+    .btn-copy:hover { background: var(--border); }
 
     .player-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
     .player-list li {
@@ -221,11 +234,7 @@
 
     #gameover-board-wrap { width: 100%; }
     #gameover-board-wrap .section-label { text-align: center; margin-bottom: 0.5rem; }
-    #gameover-board {
-      display: grid;
-      gap: 4px;
-      width: 100%;
-    }
+    #gameover-board { display: grid; gap: 4px; width: 100%; }
     .preview-cell {
       aspect-ratio: 1;
       background: var(--surface);
@@ -238,11 +247,7 @@
       font-weight: 700;
       color: var(--text-dim);
     }
-    .preview-cell.marked {
-      background: var(--marked);
-      border-color: var(--accent-dim);
-      color: var(--marked-text);
-    }
+    .preview-cell.marked { background: var(--marked); border-color: var(--accent-dim); color: var(--marked-text); }
 
     #toast {
       position: fixed;
@@ -282,7 +287,7 @@
 </head>
 <body>
 
-<!-- ── Start ─────────────────────────────────────────────── -->
+<!-- ── Start ──────────────────────────────────────────────── -->
 <div id="start-screen" class="screen active">
   <div class="title">BINGO</div>
   <div class="card">
@@ -302,9 +307,9 @@
       </div>
     </div>
     <div id="grid-size-wrap">
-      <div class="section-label">Grid Size (5 – 15)</div>
+      <div class="section-label">Grid Size (5&ndash;15)</div>
       <input type="number" id="grid-size-input" min="5" max="15" value="5" inputmode="numeric">
-      <p class="dim-text" id="grid-size-hint" style="margin-top:-0.25rem">5 × 5 grid · 25 numbers</p>
+      <p class="dim-text" id="grid-size-hint" style="margin-top:-0.25rem">5 &times; 5 grid &middot; 25 numbers</p>
     </div>
     <div id="room-input-wrap" style="display:none">
       <div class="section-label">Room Code</div>
@@ -315,24 +320,27 @@
   </div>
 </div>
 
-<!-- ── Lobby ─────────────────────────────────────────────── -->
+<!-- ── Lobby ────────────────────────────────────────────── -->
 <div id="lobby-screen" class="screen">
   <div class="title">BINGO</div>
   <div class="card">
     <div class="room-code-box" id="room-code-box" style="display:none">
-      <div class="label">Room Code — share with friends</div>
-      <div class="code" id="room-code-text"></div>
+      <div class="label">Room Code &mdash; share with friends</div>
+      <div class="code-row">
+        <div class="code" id="room-code-text"></div>
+        <button class="btn-copy" id="btn-copy">Copy</button>
+      </div>
     </div>
     <div>
       <div class="section-label">Players (<span id="player-count">0</span>/5)</div>
       <ul class="player-list" id="lobby-player-list"></ul>
     </div>
-    <button class="btn-primary" id="start-btn" style="display:none" disabled>Start Game</button>
+    <button class="btn-primary" id="start-btn" style="display:none" disabled>Waiting for players&hellip;</button>
     <p class="dim-text" id="lobby-status"></p>
   </div>
 </div>
 
-<!-- ── Game ──────────────────────────────────────────────── -->
+<!-- ── Game ─────────────────────────────────────────────── -->
 <div id="game-screen" class="screen">
   <div id="bingo-score">
     <span class="bingo-letter" id="bl-0">B</span>
@@ -346,11 +354,11 @@
     <ul class="player-list" id="game-player-list"></ul>
   </div>
   <div id="bingo-board"></div>
-  <div id="instruction">Waiting…</div>
+  <div id="instruction">Waiting&hellip;</div>
   <button id="exit-btn">Leave game</button>
 </div>
 
-<!-- ── Game Over ──────────────────────────────────────────── -->
+<!-- ── Game Over ───────────────────────────────────────────── -->
 <div id="gameover-screen" class="screen">
   <div class="go-title">Game Over</div>
   <div id="winner-text"></div>
@@ -363,36 +371,6 @@
 
 <div id="toast"></div>
 
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-
-<!--
-  ════════════════════════════════════════════════════════════
-  STEP 1 — Paste your Firebase project config below.
-  Go to: console.firebase.google.com
-    → Your project → Project settings → Your apps
-    → "SDK setup and configuration" → copy the firebaseConfig object
-  ════════════════════════════════════════════════════════════
--->
-<script>
-  const firebaseConfig = {
-    apiKey:            "AIzaSyCR1mA8CFrYlah09a5eh7FDtVexTjTFcXE",
-    authDomain:        "bsnta-bingo.firebaseapp.com",
-    databaseURL:       "https://bsnta-bingo-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId:         "bsnta-bingo",
-    storageBucket:     "bsnta-bingo.firebasestorage.app",
-    messagingSenderId: "912355182754",
-    appId:             "1:912355182754:web:9d8c967deadd829e1daffb"
-  };
-  firebase.initializeApp(firebaseConfig);
-</script>
-
-<script>
-  // Load game.js with a timestamp so the CDN never serves a stale version
-  const s = document.createElement('script');
-  s.src = 'game.js?_=' + Date.now();
-  document.body.appendChild(s);
-</script>
+<script type="module" src="game.js"></script>
 </body>
 </html>
