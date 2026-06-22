@@ -494,9 +494,13 @@ class BingoApp {
 
     const ul = this.$('lobby-player-list');
     ul.innerHTML = '';
-    players.forEach(p => {
+    players.forEach((p, i) => {
       const li = document.createElement('li');
-      li.textContent = p.name;
+      const av = document.createElement('span');
+      av.className = `player-avatar av-${i % 5}`;
+      av.textContent = p.name.charAt(0).toUpperCase();
+      li.appendChild(av);
+      li.appendChild(document.createTextNode(p.name));
       if (p.isHost) {
         const badge = document.createElement('span');
         badge.className = 'badge';
@@ -592,6 +596,10 @@ class BingoApp {
       const dot = document.createElement('span');
       dot.className = 'turn-dot';
       li.appendChild(dot);
+      const av = document.createElement('span');
+      av.className = `player-avatar av-${i % 5}`;
+      av.textContent = p.name.charAt(0).toUpperCase();
+      li.appendChild(av);
       li.appendChild(document.createTextNode(p.name));
       if (i === st.turnIndex) li.classList.add('active-turn');
       ul.appendChild(li);
@@ -606,10 +614,18 @@ class BingoApp {
 
   _renderGameOver() {
     const st = this.publicState;
-    const el = this.$('winner-text');
     const isWinner = st.winner === this.myName;
-    el.textContent = isWinner ? 'You Win! 🎉' : `Winner: ${st.winner || 'Unknown'}`;
-    el.style.color = isWinner ? 'var(--accent)' : 'var(--blue)';
+
+    const goTitle = this.$('go-title');
+    if (goTitle) {
+      goTitle.textContent = isWinner ? '🎉 You Win!' : 'Game Over';
+      goTitle.className = 'go-title ' + (isWinner ? 'go-win' : 'go-lose');
+    }
+
+    const el = this.$('winner-text');
+    el.textContent = isWinner ? 'Congratulations!' : `Winner: ${st.winner || 'Unknown'}`;
+    el.classList.toggle('is-winner', isWinner);
+
     this._buildGameoverBoard(st);
   }
 
