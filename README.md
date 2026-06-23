@@ -1,30 +1,77 @@
-# Bingo
+# Bingo — Multiplayer
 
-This is a multi-player Bingo game developed using Java, that can run on a LAN.
+A real-time multiplayer Bingo game with two ways to play: directly in the browser with no install, or as a classic Java desktop app over a local network.
 
-## To run this game
+**Play in browser:** [bsntas.github.io/Bingo](https://bsntas.github.io/Bingo)
 
-1. cd into Bingo-Binary folder
+---
 
-2. Give executable permission to bingo.sh file
-        $ chmod +x bingo.sh
+## Web version
 
-3. Run the shell script file
-        $ ./bingo.sh
+### Features
 
-4. Enter your name in the text box
+- **2–5 players** over a peer-to-peer connection — no server, no accounts, no install
+- **Configurable grid** — 5×5 up to 15×15 (set by the host before starting)
+- Works on **mobile and desktop** — responsive, touch-friendly layout
+- **No backend** — pure static site served from GitHub Pages
+- **Reconnect** — players who background the tab and return within 45 seconds are restored seamlessly to their seat
+- Win by completing **5 lines** (rows or columns)
 
-5. First and only first player, choose the first option "Host the game myself", press "continue" (the screen changes to show all joined players' list). Do not press "Start Game" button until all participants join.
-Subsequent players, choose the second option "Connect to remote host" (activated by default) and type in the first player's (who runs the game server) ip address and press "continue".
+### How to play
 
-6. When all the players have joined, the first player (who is running the game server) press "Start Game". The screen changes to show the game for all players. Only one player is activated at a given point in time (marked by green signal before the palyer's name).
+1. Open the game in a browser.
+2. Enter your name and choose **Host a game** — you'll get a 4-character room code.
+3. Share the code with friends. They enter the code, choose **Join a game**, and tap **Continue**.
+4. Once 2–5 players have joined, the host taps **Start Game**.
+5. Players take turns — on your turn, tap a number from your board to call it for everyone.
+6. The number is automatically marked on every player's board.
+7. First player to complete **5 lines** wins!
 
-7. Enjoy the BINGO game.
+### Architecture
 
+The web game is a **zero-backend static site** served from the `docs/` folder on GitHub Pages.
 
-#Dependencies:
+```
+docs/
+├── index.html   App shell + all screen markup (start / lobby / game / game-over)
+└── game.js      BingoApp class — P2P networking, game engine, rendering
+```
 
-        Make sure that you have Java 8.0 or higher installed in your system.
-        
-# License:
-        You are free to use the code. In reports/writeups please mention this link as reference.
+Multiplayer is powered by [Trystero](https://github.com/dmotz/trystero) with the MQTT strategy. Peers discover each other via HiveMQ's public MQTT broker (`wss://broker.hivemq.com:8884/mqtt`) and communicate directly over WebRTC data channels. No signalling server is owned or operated.
+
+**Host-authoritative model:** the host tab runs the full game state and broadcasts it to all peers on every action. Guests send actions (`commit`) to the host which validates and rebroadcasts them.
+
+### Self-hosted server version
+
+A Node.js / WebSocket server version lives in `web/` for anyone who wants to self-host.
+
+```bash
+cd web
+npm install
+npm start        # runs on http://localhost:3000
+```
+
+---
+
+## Java version (LAN)
+
+The original Bingo — a desktop multiplayer game for local networks, built in Java.
+
+### Requirements
+
+Java 8.0 or higher.
+
+### How to run
+
+1. `cd` into the `Bingo-Binary` folder.
+2. Make the script executable: `chmod +x bingo.sh`
+3. Run: `./bingo.sh`
+4. The **first player** (the host) selects "Host the game myself" and waits on the player list screen. Do not press **Start Game** until everyone has joined.
+5. All other players select "Connect to remote host", enter the host's IP address, and press **Continue**.
+6. Once all players have joined, the host presses **Start Game**.
+
+---
+
+## License
+
+You are free to use the code. In reports / write-ups please mention this repository as a reference.
